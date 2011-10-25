@@ -32,7 +32,7 @@ using namespace std;
 namespace Starsky {
   class SonRouting{
     public:
-      enum ConnectionMode{FRIENDS, NON_FRIENDS, NEAR_CONN, SHORTCUT, FORWARDING, PO_NEAR, NUM_ROUTING_MODE};
+      enum ConnectionMode{FRIENDS, NON_FRIENDS, NEAR_CONN, SHORTCUT, FORWARDING, PO_NEAR, DIRECT_FRIEND, NUM_ROUTING_MODE};
       SonRouting(int net_size, int friend_select_method);
       SonRouting(SonFriendSelect* friends_net);
       virtual map<int, map<int, int>* >* BuildRoutingTable() = 0;
@@ -41,19 +41,16 @@ namespace Starsky {
       virtual void PrintRoutingTable();        
       virtual bool Check();
       void BuildRing();
+      void CreateShortcutConn();
       map<int, map<int, int>*>* GetRoutingTable();      
       map<int, multimap<int,int>* >* GetFwdRouteTable();
-      static bool MultimapKeyValueExist(multimap<int,int>* input_mm, int key, int value);
-      static bool DeleteMultimapEntry(multimap<int, int>* input_mm, int key, int value);      
+      bool EdgeExist(int n1, int n2);
+      void GetRoutingTableStat();
     protected:      
-      void UpdateRemainConn(int n1, int n2, bool deduct);
-      void AddKConnections(int target_node_id);      
-      virtual void TrimConnections(int host_addr);      
-      void DealWithNonKCovered(int host_addr);           
       bool AddForwardingPath(int source, int target, int gateway);      
       bool DeleteForwardingPath(int source, int target, int gateway);
       bool DeleteForwardingPath(int source, int target);
-      bool IsTrimable(int source, int target);
+      void CalculateFwdOverhead();
       SonFriendSelect* _son_friend;
       unsigned int _max_routing_table_entry;
       unsigned int _num_forwarding;  //for statistics
@@ -72,7 +69,11 @@ namespace Starsky {
       SonKCoverageRouting(int net_size, int friend_select_method);
       SonKCoverageRouting(SonFriendSelect* friends_net);
       map<int, map<int, int>* >* BuildRoutingTable();  
-    protected:
+    protected:      
+      void AddKConnections(int target_node_id);      
+      void DealWithNonKCovered(int host_addr);               
+      void UpdateRemainConn(int n1, int n2, bool deduct);      
+      void TrimConnections(int host_addr);      
   };
 
   class SonPrivateOverlayRouting : public SonRouting{
@@ -81,8 +82,10 @@ namespace Starsky {
       SonPrivateOverlayRouting(SonFriendSelect* friends_net);
       map<int, map<int, int>* >* BuildRoutingTable();  
       bool Check();
-      int GetGatewayNode(int source, int dst);
-    protected:
+      int GetGatewayNode(int source, int dst);      
+      void PrintForwardTable();
+    protected:      
+      bool IsTrimable(int source, int target);
       void CreatePrivateOverlay(int host_id);
       bool TrimPonConn(int host_id);      
       vector<int>* RouteExistAmongFriends(map<int, int>* routing_table, map<int, int>* friends_list, map<int,int>* target_rt);
@@ -92,6 +95,7 @@ namespace Starsky {
       bool LeastCommonScCreate(multimap<int, int>* f_freq_table, map<int, int>* host_node_ft, map<int, int>* friend_rt, int friend_id);
       bool LeastNearConnScCreate(multimap<int, int>* f_freq_table, map<int, int>* host_node_ft, map<int, int>* fr_table, int friend_id, int predecessor);
       bool RandomShortcutCreate(multimap<int, int>* f_freq_table, map<int, int>* host_node_ft, map<int, int>* fr_table, int friend_id);
+      int GetPrivateOverlayJoinStat();
       unsigned int _threshhold;
   };
 

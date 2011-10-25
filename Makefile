@@ -1,7 +1,7 @@
 CC=g++
 CFLAGS=-c -Wall -g
 LDFLAGS=
-SOURCES=son_test.cpp SocialOverlayNetwork.cpp son_friend_select.cpp son_msg_dist.cpp son_routing.cpp
+SOURCES=son_test.cpp SocialOverlayNetwork.cpp son_friend_select.cpp son_msg_dist.cpp son_routing.cpp son_util.cpp
 OBJECTS=$(SOURCES:.cpp=.o)
 EXECUTABLE=son_test
 
@@ -22,6 +22,9 @@ son_msg_dist.o : son_msg_dist.cpp son_msg_dist.h
 
 son_routing.o : son_routing.cpp son_routing.h
 	$(CC) $(CFLAGS) son_routing.cpp
+
+son_util.o : son_util.cpp son_util.h
+	$(CC) $(CFLAGS) son_util.cpp
 
 $(EXECUTABLE): $(OBJECTS)
 	$(CC) $(LDFLAGS) $(OBJECTS) -o $(EXECCUTABLE)

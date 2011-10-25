@@ -25,6 +25,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include <vector>
 #include <map>
 #include "son_routing.h"
+#include "son_util.h"
 
 using namespace std;
 namespace Starsky {
@@ -33,11 +34,16 @@ namespace Starsky {
       SonMsgDist(SonRouting* routing_info);
       int GreedyDeliever(int source, int dest, int cur_hops);      
       int FloodDeliever(int source, map<int, int>* dist, int cur_hops);
-      int MulticastDeliever(int source, map<int, int>* dist, int cur_hops);
+      int MulticastDeliever(int source, map<int, int>* org_recpt, map<int, int>* dist, int cur_hops);
       SonRouting* GetRoutingInfo();      
       static int GetDistance(int addr_a, int addr_b);
+      void UpdateMsgOverhead(int id, int total_msg);      
+      void PrintMsgOverhead();
     protected:
       SonRouting* _routing_info;
+      map<int, map<int, int>* >* _global_routing_table;
+      map<int, SonStatistics*>* _msg_overhead;
+      map<int, multimap<int,int>* >* _fwd_route;
   };
 }
 #endif

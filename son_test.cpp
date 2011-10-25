@@ -7,6 +7,7 @@
 #include "son_friend_select.h"
 #include "son_msg_dist.h"
 #include "son_routing.h"
+#include "son_util.h"
 
 
 using namespace std;
@@ -299,35 +300,56 @@ void FileParse(char* filename){
 }
 #endif
 
-void MsgTest(SonMsgDist* son_msg, SonFriendSelect* sfs){
+void KcMsgTest(SonMsgDist* son_msg, SonFriendSelect* sfs){
   map<int, map<int, int>* >* friends_map = sfs->GetFriendsMap();
   map<int, map<int, int>* >::iterator fm_it;
-/*
-  map<int, map<int, int>* >* rt = son_msg->GetRoutingInfo()->GetRoutingTable();
-  map<int,int>* rt1 = (*rt)[147243655];
-  map<int,int>* rt2 = (*rt)[141116556];
-  map<int,int>* rt3 = (*rt)[2126632980];
-  map<int, int>::iterator it;
-  cout << "root : 147243655" << endl;
-  for(it = rt1->begin();it !=rt1->end();it++){
-    cout << it->first << " : " <<it->second << endl;
-  }
-
-  cout << "root : 141116556" << endl;
-  for(it = rt2->begin();it !=rt2->end();it++){
-    cout << it->first << " : " <<it->second << endl;
-  }
-
-  
-  cout << "root : 2126632980" << endl;
-  for(it = rt3->begin();it !=rt3->end();it++){
-    cout << it->first << " : " <<it->second << endl;
-  }
-  return;
-*/  
+  map<int, SonStatistics*> routing_hops_stat;
   for(fm_it = friends_map->begin();fm_it != friends_map->end();fm_it++){
     map<int, int>* msg_recipients = new map<int, int>();
     map<int, int>::iterator fit;
+    int friend_count = fm_it->second->size();
+    for(fit = fm_it->second->begin();fit != fm_it->second->end();fit++){
+      msg_recipients->insert(pair<int,int>(fit->first,-1));
+    }
+    int total_msg = son_msg->FloodDeliever(fm_it->first, msg_recipients,0);
+    for(fit = msg_recipients->begin(); fit != msg_recipients->end();fit++){
+      if (fit->second < 0){
+        cout << "root = " << fm_it->first << " neighbor size = " << friend_count << " neighbor = " << fit->first << " : " <<((*friends_map)[fit->first])->size()<<endl;
+      }
+    }
+    SonStatistics* son_stat_rt;
+    if(routing_hops_stat.count(friend_count) != 0){
+      son_stat_rt = routing_hops_stat[friend_count];
+    }else{
+      son_stat_rt = new SonStatistics(friend_count);
+      routing_hops_stat[friend_count] = son_stat_rt;
+    }
+    son_stat_rt->UpdateStat(msg_recipients);
+ //   cout << "total generated message = " << total_msg << endl;
+    delete msg_recipients;
+    son_msg->UpdateMsgOverhead(friend_count, total_msg);
+  }
+  map<int, SonStatistics*>::iterator ss_it;
+  map<int, SonStatistics*>* summ_result = SonUtil::SummarizeStat(&routing_hops_stat);
+  cout << endl << endl;
+  for(ss_it=summ_result->begin();ss_it != summ_result->end();ss_it++){
+    ss_it->second->PrintStat();
+  }
+  delete summ_result;
+  cout << endl << endl;
+  son_msg->PrintMsgOverhead();
+}
+
+void PoMsgTest(SonMsgDist* son_msg, SonFriendSelect* sfs){
+  map<int, map<int, int>* >* friends_map = sfs->GetFriendsMap();
+  map<int, map<int, int>* >::iterator fm_it;
+  map<int, SonStatistics*> routing_hops_stat;
+  map<int, SonStatistics*> fwd_overhead_stat;
+  int _threshold = 100;
+  for(fm_it = friends_map->begin();fm_it != friends_map->end();fm_it++){
+    map<int, int>* msg_recipients = new map<int, int>();
+    map<int, int>::iterator fit;
+    int friend_count = fm_it->second->size();
     for(fit = fm_it->second->begin();fit != fm_it->second->end();fit++){
       msg_recipients->insert(pair<int,int>(fit->first,-1));
     }
@@ -335,7 +357,11 @@ void MsgTest(SonMsgDist* son_msg, SonFriendSelect* sfs){
 //    cout << "root = " << fm_it->first << " neighbor number = " << fm_it->second->size()<<endl;
     for(fit = msg_recipients->begin(); fit != msg_recipients->end();fit++){
       if (fit->second < 0){
-        if (((*friends_map)[fit->first])->size() < 100){
+        if(friend_count > _threshold){
+//          cout << "missing message in a private overlay root = " << fm_it->first << " neighbor size = " << fm_it->second->size() << " neighbor = " << fit->first << " : " <<((*friends_map)[fit->first])->size()<<endl;
+          continue;
+        }
+        if (((*friends_map)[fit->first])->size() < _threshold){
           cout << "root = " << fm_it->first << " neighbor size = " << fm_it->second->size() << " neighbor = " << fit->first << " : " <<((*friends_map)[fit->first])->size()<<endl;
         }else{        
           SonPrivateOverlayRouting* spor = (SonPrivateOverlayRouting*)(son_msg->GetRoutingInfo());
@@ -347,27 +373,93 @@ void MsgTest(SonMsgDist* son_msg, SonFriendSelect* sfs){
               cout << "no gateway for a po root = " << fm_it->first << " neighbor size = " << fm_it->second->size() << " neighbor = " << fit->first << " : " <<((*friends_map)[fit->first])->size()<<endl;
               continue;
             }
-            int hops = son_msg->GreedyDeliever(gw_node, fit->first, 0);
+            int hops = son_msg->GreedyDeliever(fm_it->first, fit->first, 1);
             if (hops < 0){
               cout << "no path using gredy in a po root = " << fm_it->first << " neighbor size = " << fm_it->second->size() << " neighbor = " << fit->first << " : " <<((*friends_map)[fit->first])->size()<<endl;
+            }else{
+              total_msg += hops;
+              (*msg_recipients)[fit->first] = hops;
             }
           }
         }
       }
     }
+    SonStatistics* son_stat_rt;
+    if(routing_hops_stat.count(friend_count) != 0){
+      son_stat_rt = routing_hops_stat[friend_count];
+    }else{
+      son_stat_rt = new SonStatistics(friend_count);
+      routing_hops_stat[friend_count] = son_stat_rt;
+    }
+    son_stat_rt->UpdateStat(msg_recipients);
  //   cout << "total generated message = " << total_msg << endl;
     delete msg_recipients;
+    son_msg->UpdateMsgOverhead(friend_count, total_msg);
   }
+  map<int, SonStatistics*>::iterator ss_it;
+  map<int, SonStatistics*>* summ_result = SonUtil::SummarizeStat(&routing_hops_stat);
+  cout << endl << endl;
+  for(ss_it=summ_result->begin();ss_it != summ_result->end();ss_it++){
+    ss_it->second->PrintStat();
+  }
+  delete summ_result;
+  cout << endl<< endl;
+  son_msg->PrintMsgOverhead();
 }
+
+void MulticastMsgTest(SonMsgDist* son_msg, SonFriendSelect* sfs){
+  map<int, map<int, int>* >* friends_map = sfs->GetFriendsMap();
+  map<int, map<int, int>* >::iterator fm_it;
+  map<int, SonStatistics*> routing_hops_stat;
+  for(fm_it = friends_map->begin();fm_it != friends_map->end();fm_it++){
+    map<int, int>* msg_recipients = new map<int, int>();
+    map<int, int>::iterator fit;
+    int friend_count = fm_it->second->size();
+    for(fit = fm_it->second->begin();fit != fm_it->second->end();fit++){
+      msg_recipients->insert(pair<int,int>(fit->first,-1));
+    }
+    int total_msg = son_msg->MulticastDeliever(fm_it->first, msg_recipients, msg_recipients,0);
+//    cout << "root = " << fm_it->first << " neighbor number = " << fm_it->second->size()<<endl;
+    for(fit = msg_recipients->begin(); fit != msg_recipients->end();fit++){
+      if (fit->second < 0){
+//        cout << "root = " << fm_it->first << " neighbor size = " << fm_it->second->size() << " neighbor = " << fit->first << " : " <<((*friends_map)[fit->first])->size()<<endl;
+      }
+    }
+    SonStatistics* son_stat_rt;
+    if(routing_hops_stat.count(friend_count) != 0){
+      son_stat_rt = routing_hops_stat[friend_count];
+    }else{
+      son_stat_rt = new SonStatistics(friend_count);
+      routing_hops_stat[friend_count] = son_stat_rt;
+    }
+    son_stat_rt->UpdateStat(msg_recipients);
+ //   cout << "total generated message = " << total_msg << endl;
+    delete msg_recipients;
+    son_msg->UpdateMsgOverhead(friend_count, total_msg);
+  }
+  map<int, SonStatistics*>::iterator ss_it;
+  map<int, SonStatistics*>* summ_result = SonUtil::SummarizeStat(&routing_hops_stat);
+  cout << endl << endl;
+  for(ss_it=summ_result->begin();ss_it != summ_result->end();ss_it++){
+    ss_it->second->PrintStat();
+  }
+  delete summ_result;
+  cout << endl << endl;
+  son_msg->PrintMsgOverhead();
+}
+
+
 
 int main(int argc, char *argv[]) 
 {
     SonFriendSelect* sfs;
     SonRouting* son_routing;
     SonMsgDist* son_messaging;
-    if(argc == 3){
+//srand((unsigned)time(0));
+    if(argc == 4){
       string filename = argv[1];
       int route_mode = atoi(argv[2]);
+      int msg_mode = atoi(argv[3]);
       string freq_name = filename + ".freq";
       sfs = new SonFriendFromFile(filename);
 //      sfs->CalculateCloseness();
@@ -385,9 +477,18 @@ int main(int argc, char *argv[])
         son_routing = new SonClusterRouting(sfs);
       }
       son_routing->BuildRoutingTable();
+      son_routing->GetRoutingTableStat();
+//      son_routing->PrintRoutingTable();
       son_messaging = new SonMsgDist(son_routing);
-      MsgTest(son_messaging, sfs);
- //     son_routing->PrintRoutingTable();
+      if(route_mode == 0){
+        KcMsgTest(son_messaging, sfs);
+      }else if(route_mode == 1){
+        if(msg_mode == 0){
+          PoMsgTest(son_messaging, sfs);
+        }else if(msg_mode == 1){
+          MulticastMsgTest(son_messaging, sfs);
+        }
+      }
       return 1;
     }else if (argc != 12) {
 	    cerr << "Usage: " << argv[0] << ", number of nodes, number of friends,  cohesiveness, mode(uni:0, multi:1), friends_connection(no conn:0, with conn:1), friend connection select method(0:random, 1:harmony, 2:common friends), use only friends (0:false, 1:true), friends select method(0:random, 1:nearest-neighbor), use lookaside buffer(0,1), number of random friends, number of bucket" << endl;
