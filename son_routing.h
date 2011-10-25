@@ -84,6 +84,7 @@ namespace Starsky {
       bool Check();
       int GetGatewayNode(int source, int dst);      
       void PrintForwardTable();
+      void GetLimitedPoStat();
     protected:      
       bool IsTrimable(int source, int target);
       void CreatePrivateOverlay(int host_id);
@@ -96,7 +97,10 @@ namespace Starsky {
       bool LeastNearConnScCreate(multimap<int, int>* f_freq_table, map<int, int>* host_node_ft, map<int, int>* fr_table, int friend_id, int predecessor);
       bool RandomShortcutCreate(multimap<int, int>* f_freq_table, map<int, int>* host_node_ft, map<int, int>* fr_table, int friend_id);
       int GetPrivateOverlayJoinStat();
+      map<int, map<int, int>* >* BuildJoinablePoMap();
       unsigned int _threshhold;
+      map<int, map<int, int>* >* _joinable_po_map;
+      map<int, multimap<int, int>* >* _score_joinable_po_map;
   };
 
   class SonClusterRouting : public SonRouting{
