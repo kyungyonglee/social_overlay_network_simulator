@@ -33,7 +33,7 @@ namespace Starsky {
     public:
       SonMsgDist(SonRouting* routing_info);
       int GreedyDeliever(int source, int dest, int cur_hops);      
-      int FloodDeliever(int source, map<int, int>* dist, int cur_hops);
+      int FloodDeliever(int source, map<int, int>* dist, int cur_hops, int ttl);
       int MulticastDeliever(int source, map<int, int>* org_recpt, map<int, int>* dist, int cur_hops);
       SonRouting* GetRoutingInfo();      
       static int GetDistance(int addr_a, int addr_b);

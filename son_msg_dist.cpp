@@ -43,7 +43,9 @@ int SonMsgDist::GreedyDeliever(int source, int dest, int cur_hops){
   if (NULL == self_rtable){
     return -1;
   }
-
+  if(source == dest){
+    return cur_hops;
+  }
   if (self_rtable->count(dest) == 0){
     if(_fwd_route != NULL && _fwd_route->count(source) != 0){
       multimap<int,int>* own_fwd_tbl = (*_fwd_route)[source];
@@ -85,7 +87,7 @@ int SonMsgDist::GreedyDeliever(int source, int dest, int cur_hops){
 }
 
 
-int SonMsgDist::FloodDeliever(int sender, map<int, int>* dist, int cur_hops){
+int SonMsgDist::FloodDeliever(int sender, map<int, int>* dist, int cur_hops, int ttl){
   map<int, int>* self_rtable = _global_routing_table->count(sender) == 0 ? NULL : (*_global_routing_table)[sender];
   multimap<int, int>* fwd_table = _fwd_route->count(sender) == 0 ? NULL : (*_fwd_route)[sender];
   if (NULL == self_rtable){
@@ -96,11 +98,11 @@ int SonMsgDist::FloodDeliever(int sender, map<int, int>* dist, int cur_hops){
   int msg_count = 0, msg_count_child = 0, temp_count=0;
   int taken_hops = cur_hops + 1;
   for(rt_it = self_rtable->begin();rt_it != self_rtable->end();rt_it++){
-    if (dist->count(rt_it->first) != 0){
+    if (dist->count(rt_it->first) != 0 && (taken_hops <= ttl || ttl < 0)){
       int prev_hops = (*dist)[rt_it->first];
       if (prev_hops == -1 || taken_hops < prev_hops){
         (*dist)[rt_it->first] = taken_hops;
-        temp_count = FloodDeliever(rt_it->first, dist, taken_hops);
+        temp_count = FloodDeliever(rt_it->first, dist, taken_hops, ttl);
         if(prev_hops == -1){
           msg_count_child += temp_count;  // forward to its child nodes only once
         }
@@ -118,7 +120,7 @@ int SonMsgDist::MulticastDeliever(int source, map<int, int>* org_recpt, map<int,
   if(self_routing == NULL){
     return 0;
   }
-//  map<int,int>* intersect_list = SonUtil::GetInteresctEntry(self_routing, org_recpt);
+  map<int,int>* intersect_list = SonUtil::GetInteresctEntry(self_routing, dist);
   map<int,int>::iterator dest_it;
   for(dest_it=dist->begin();dest_it!=dist->end();dest_it++){
     map<int,int>* per_node_assgn;
@@ -130,11 +132,12 @@ int SonMsgDist::MulticastDeliever(int source, map<int, int>* org_recpt, map<int,
     if(self_routing->count(dest_it->first) != 0){
       next_node = dest_it->first;
     }else if(self_fwd != NULL && self_fwd->count(dest_it->first) != 0){
+      cout << "in forward"<< endl;
       pair<multimap<int,int>::iterator,multimap<int,int>::iterator> range = self_fwd->equal_range(dest_it->first);
       multimap<int,int>::iterator it = range.first;
       next_node = it->second;
     }else{
-      next_node = SonUtil::GetClosestNode(source, self_routing, dest_it->first);
+      next_node = SonUtil::GetClosestNode(source, intersect_list, dest_it->first);
     }
     if (next_node > 0){
       if(node_assignment.count(next_node) != 0){
@@ -144,9 +147,9 @@ int SonMsgDist::MulticastDeliever(int source, map<int, int>* org_recpt, map<int,
         node_assignment[next_node] = per_node_assgn;
       }
       per_node_assgn->insert(pair<int,int>(dest_it->first, -1));
-    }    
+    }
   }
-//  delete intersect_list;
+  delete intersect_list;
   map<int, map<int,int>*>::iterator na_it;
   for(na_it=node_assignment.begin();na_it != node_assignment.end();na_it++){    
     total_msg++;

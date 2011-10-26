@@ -311,7 +311,7 @@ void KcMsgTest(SonMsgDist* son_msg, SonFriendSelect* sfs){
     for(fit = fm_it->second->begin();fit != fm_it->second->end();fit++){
       msg_recipients->insert(pair<int,int>(fit->first,-1));
     }
-    int total_msg = son_msg->FloodDeliever(fm_it->first, msg_recipients,0);
+    int total_msg = son_msg->FloodDeliever(fm_it->first, msg_recipients,0, -1);
     for(fit = msg_recipients->begin(); fit != msg_recipients->end();fit++){
       if (fit->second < 0){
         cout << "root = " << fm_it->first << " neighbor size = " << friend_count << " neighbor = " << fit->first << " : " <<((*friends_map)[fit->first])->size()<<endl;
@@ -340,12 +340,11 @@ void KcMsgTest(SonMsgDist* son_msg, SonFriendSelect* sfs){
   son_msg->PrintMsgOverhead();
 }
 
-void PoMsgTest(SonMsgDist* son_msg, SonFriendSelect* sfs){
+void PoMsgTest(SonMsgDist* son_msg, SonFriendSelect* sfs, map<int,int>* po_create_nodes, map<int, map<int,int>* >* po_join_map){
   map<int, map<int, int>* >* friends_map = sfs->GetFriendsMap();
   map<int, map<int, int>* >::iterator fm_it;
   map<int, SonStatistics*> routing_hops_stat;
   map<int, SonStatistics*> fwd_overhead_stat;
-  int _threshold = 100;
   for(fm_it = friends_map->begin();fm_it != friends_map->end();fm_it++){
     map<int, int>* msg_recipients = new map<int, int>();
     map<int, int>::iterator fit;
@@ -353,37 +352,20 @@ void PoMsgTest(SonMsgDist* son_msg, SonFriendSelect* sfs){
     for(fit = fm_it->second->begin();fit != fm_it->second->end();fit++){
       msg_recipients->insert(pair<int,int>(fit->first,-1));
     }
-    int total_msg = son_msg->FloodDeliever(fm_it->first, msg_recipients,0);
-//    cout << "root = " << fm_it->first << " neighbor number = " << fm_it->second->size()<<endl;
+    int total_msg = 0;
+    if(po_create_nodes->count(fm_it->first) != 0){  //private overlay nodes
+      total_msg = son_msg->MulticastDeliever(fm_it->first, msg_recipients, msg_recipients,0);
+    }else{
+      total_msg = son_msg->FloodDeliever(fm_it->first, msg_recipients, 0, 2);
+    }
     for(fit = msg_recipients->begin(); fit != msg_recipients->end();fit++){
       if (fit->second < 0){
-        if(friend_count > _threshold){
-//          cout << "missing message in a private overlay root = " << fm_it->first << " neighbor size = " << fm_it->second->size() << " neighbor = " << fit->first << " : " <<((*friends_map)[fit->first])->size()<<endl;
-          continue;
-        }
-        if (((*friends_map)[fit->first])->size() < _threshold){
-          cout << "root = " << fm_it->first << " neighbor size = " << fm_it->second->size() << " neighbor = " << fit->first << " : " <<((*friends_map)[fit->first])->size()<<endl;
-        }else{        
-          SonPrivateOverlayRouting* spor = (SonPrivateOverlayRouting*)(son_msg->GetRoutingInfo());
-          if (NULL == spor){
-            cout << "no po root = " << fm_it->first << " neighbor size = " << fm_it->second->size() << " neighbor = " << fit->first << " : " <<((*friends_map)[fit->first])->size()<<endl;
-          }else{
-            int gw_node = spor->GetGatewayNode(fm_it->first, fit->first);
-            if(gw_node < -1){
-              cout << "no gateway for a po root = " << fm_it->first << " neighbor size = " << fm_it->second->size() << " neighbor = " << fit->first << " : " <<((*friends_map)[fit->first])->size()<<endl;
-              continue;
-            }
-            int hops = son_msg->GreedyDeliever(fm_it->first, fit->first, 1);
-            if (hops < 0){
-              cout << "no path using gredy in a po root = " << fm_it->first << " neighbor size = " << fm_it->second->size() << " neighbor = " << fit->first << " : " <<((*friends_map)[fit->first])->size()<<endl;
-            }else{
-              total_msg += hops;
-              (*msg_recipients)[fit->first] = hops;
-            }
-          }
-        }
+        int hops = son_msg->GreedyDeliever(fm_it->first, fit->first, 1);
+        total_msg += hops;
+        (*msg_recipients)[fit->first] = hops;
       }
     }
+    
     SonStatistics* son_stat_rt;
     if(routing_hops_stat.count(friend_count) != 0){
       son_stat_rt = routing_hops_stat[friend_count];
@@ -420,8 +402,11 @@ void MulticastMsgTest(SonMsgDist* son_msg, SonFriendSelect* sfs){
     }
     int total_msg = son_msg->MulticastDeliever(fm_it->first, msg_recipients, msg_recipients,0);
 //    cout << "root = " << fm_it->first << " neighbor number = " << fm_it->second->size()<<endl;
+    if(friend_count > 100 && total_msg != msg_recipients->size()){
+//      cout << "hops taken = " << total_msg << " msg recipients size = " << msg_recipients->size() << " root = " << fm_it->first<<endl;
+    }
     for(fit = msg_recipients->begin(); fit != msg_recipients->end();fit++){
-      if (fit->second < 0){
+      if ( fm_it->second->size() > 100 &&  fit->second < 0){
 //        cout << "root = " << fm_it->first << " neighbor size = " << fm_it->second->size() << " neighbor = " << fit->first << " : " <<((*friends_map)[fit->first])->size()<<endl;
       }
     }
@@ -478,16 +463,13 @@ int main(int argc, char *argv[])
       }
       son_routing->BuildRoutingTable();
       son_routing->GetRoutingTableStat();
-//      son_routing->PrintRoutingTable();
+  //    son_routing->PrintRoutingTable();
       son_messaging = new SonMsgDist(son_routing);
       if(route_mode == 0){
         KcMsgTest(son_messaging, sfs);
       }else if(route_mode == 1){
-        if(msg_mode == 0){
-          PoMsgTest(son_messaging, sfs);
-        }else if(msg_mode == 1){
-          MulticastMsgTest(son_messaging, sfs);
-        }
+        SonPrivateOverlayRouting* temp_po_son = (SonPrivateOverlayRouting*)son_routing;
+        PoMsgTest(son_messaging, sfs, temp_po_son->GetPoCreateNodes(), temp_po_son->GetJoinablePoMap());
       }
       return 1;
     }else if (argc != 12) {
