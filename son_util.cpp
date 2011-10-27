@@ -193,6 +193,36 @@ void SonStatistics::Merge(SonStatistics* in_stat){
   _count += in_stat->_count;
   _deliver_fail += in_stat->_deliver_fail;
 }
+/*
+SonCumStat::SonCumStat(int id):SonStatistics(id){
+  _cum_dist_map = new map<int,int>();
+}
 
+SonCumStat::SonCumStat():SonStatistics(0){
+  _cum_dist_map = new map<int,int>();
+}
 
+void SonCumStat::AddCumKey(int key){
+  int old_value = 0;
+  if(_cum_dist_map->count(key) != 0){
+    old_value = (*_cum_dist_map)[key];
+  }
+  old_value++;
+  (*_cum_dist_map)[key] = old_value+1;
+}
 
+void SonCumStat::AddCumKey(map<int,int>* input_map){
+  map<int,int>::iterator im_it;
+  for(im_it=input_map->begin();im_it!=input_map->end();im_it++){
+    AddCumKey(im_it->second);
+  }
+}
+
+void SonCumStat::PrintStat(){
+  map<int,int>::iterator cum_dist_it;
+  for(cum_dist_it = _cum_dist_map->begin();cum_dist_it!=_cum_dist_map->end();cum_dist_it++){
+    cout <<cum_dist_it->first <<"\t"<<cum_dist_it->second << endl;
+  }
+}
+
+*/

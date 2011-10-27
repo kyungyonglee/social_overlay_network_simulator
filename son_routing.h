@@ -46,11 +46,12 @@ namespace Starsky {
       map<int, multimap<int,int>* >* GetFwdRouteTable();
       bool EdgeExist(int n1, int n2);
       void GetRoutingTableStat();
+      static int GetHarmonicDistNode(int source, map<int,int>* target);
     protected:      
       bool AddForwardingPath(int source, int target, int gateway);      
       bool DeleteForwardingPath(int source, int target, int gateway);
       bool DeleteForwardingPath(int source, int target);
-      void CalculateFwdOverhead();
+      void CalculateFwdOverhead();      
       SonFriendSelect* _son_friend;
       unsigned int _max_routing_table_entry;
       unsigned int _num_forwarding;  //for statistics

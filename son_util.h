@@ -31,9 +31,9 @@ namespace Starsky {
   class SonStatistics{
     public:
       SonStatistics(int id);
-      void UpdateStat(map<int, int>* input_result);
-      void UpdateStat(int input);
-      void PrintStat();
+      virtual void UpdateStat(map<int, int>* input_result);
+      virtual void UpdateStat(int input);
+      virtual void PrintStat();
       void Merge(SonStatistics* in_stat);
     protected:
       int _id;
@@ -43,7 +43,18 @@ namespace Starsky {
       unsigned long _count;
       unsigned long _deliver_fail;
   };
-
+/*
+  class SonCumStat : public SonStatistics{
+    public:
+      SonCumStat(int id);
+      SonCumStat();
+      void AddCumKey(int key);
+      void AddCumKey(map<int,int>* key);
+      void PrintStat();
+    protected:
+      map<int,int>* _cum_dist_map;
+  };
+*/  
   class SonUtil{
     public:
       SonUtil();
@@ -56,5 +67,4 @@ namespace Starsky {
       static map<int,int>* GetInteresctEntry(map<int, int>* rt1, map<int,int>* rt2);
   };
 }
-
 #endif

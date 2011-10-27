@@ -380,7 +380,7 @@ void SonRouting::GetRoutingTableStat(){
 }
 
 void SonRouting::CreateShortcutConn(){
-  int sc_number = (log(_friends_map->size()))/2, add_count=0, net_size=_friends_map->size(), exp=log10(RAND_MAX);
+  int sc_number = (log(_friends_map->size()))/2, add_count=0, net_size=_friends_map->size(), e10=log10(RAND_MAX);
   map<int, map<int,int>* >::iterator fr_it;
   int weird_count=0, weird_selection=0;
   for(fr_it=_friends_map->begin();fr_it != _friends_map->end();fr_it++){
@@ -389,7 +389,7 @@ void SonRouting::CreateShortcutConn(){
     map<int,int>* host_friends = fr_it->second;
     while(add_count < sc_number&& consecutive_fail < 20){
       float fr = (float)rand()/(float)RAND_MAX;
-      int k = (int)(pow(10,(exp-(1-fr)*log10(net_size))));
+      int k = (int)(pow(10,(e10-(1-fr)*log10(net_size))));
       k &= 0x7fffffff;
       unsigned int temp = (unsigned int)host_id + (unsigned int)k;
       int shortcut_target_addr = temp%0x7fffffff;
@@ -402,6 +402,19 @@ void SonRouting::CreateShortcutConn(){
       }
     }
   }
+}
+
+int SonRouting::GetHarmonicDistNode(int source, map<int,int>* target){
+  int hm_dist_node = source, net_size=target->size(), e10 = log10(RAND_MAX);
+  while(hm_dist_node == source){
+    float fr = (float)rand()/(float)RAND_MAX;
+    int k = (int)(pow(10,(e10-(1-fr)*log10(net_size))));
+    k &= 0x7fffffff;
+    unsigned int temp = (unsigned int)source + (unsigned int)k;
+    int shortcut_target_addr = temp%0x7fffffff;
+    hm_dist_node = SonUtil::GetClosestNode(source, target, shortcut_target_addr);    
+  }
+  return hm_dist_node;
 }
 
 SonPrivateOverlayRouting::SonPrivateOverlayRouting(int net_size, int friend_select_method):SonRouting(net_size, friend_select_method){
@@ -674,6 +687,7 @@ void SonPrivateOverlayRouting::CreatePrivateOverlay(int host_id){
   map<int, int>::iterator ft_it;
   
   int predecessor = self_f_table->rbegin()->first;
+  map<int,int>* po_member = new map<int,int>();
   for(ft_it = self_f_table->begin();ft_it != self_f_table->end(); ft_it++){
     map<int, int>* fr_table = (*_routing_table)[ft_it->first];   //routing table of host id friends
     multimap<int, int>* f_freq_table = (*_freq_map)[ft_it->first];   //frequency map of host id friends
@@ -688,54 +702,19 @@ void SonPrivateOverlayRouting::CreatePrivateOverlay(int host_id){
       }
     }
     _num_po_near_conn++;
-    bool shortcut_added = false, shortcut_need = true;    
-    multimap<int, int>::reverse_iterator frq_it; //frequency iterator of hostid's friens's
-    for(frq_it = f_freq_table->rbegin();frq_it != f_freq_table->rend();frq_it++){  //check if we need to add a new shortcut connection
-      shortcut_added = false;
-      shortcut_need = true;
-      if(self_f_table->count(frq_it->second) != 0 && fr_table->count(frq_it->second) != 0  && (*fr_table)[frq_it->second] != PO_NEAR){    
-        shortcut_need = false;
-        break;
-      }
-    }
-
-    if(shortcut_need == true){
-//      shortcut_added = RandomShortcutCreate(f_freq_table, self_f_table, fr_table, ft_it->first);
-//      shortcut_added = MostCommonScCreate(f_freq_table, self_f_table, fr_table, ft_it->first);
-//      shortcut_added = LeastCommonScCreate(f_freq_table, self_f_table, fr_table, ft_it->first);
-      shortcut_added = LeastNearConnScCreate(f_freq_table, self_f_table, fr_table, ft_it->first, predecessor);
-      if(false == shortcut_added){
-        _shortcut_failed++;
-      }else{
-        _shortcut_failed--;
-      }
-    }
-
+    (*po_member)[ft_it->first] = 1;
     if(fr_table->count(predecessor) == 0){    //successor and predecessor connection
-      map<int, int>* predecessor_rt = (*_routing_table)[predecessor];
-      map<int, int>::iterator prt_it;
-      bool create_near_conn = true;
-      if (predecessor_rt != NULL){
-        if(predecessor_rt->count(ft_it->first) != 0){
-          create_near_conn = false;
-        }else{        
-          if(predecessor_rt->size() > _max_routing_table_entry || fr_table->size() > _max_routing_table_entry){ // either routing tables full
-            for(prt_it=predecessor_rt->begin();prt_it != predecessor_rt->end();prt_it++){
-              if(fr_table->count(prt_it->first) != 0 && self_f_table->count(prt_it->first) != 0){  //there is a forward way
-                AddForwardingPath(ft_it->first, predecessor, prt_it->first);
-                create_near_conn = false;
-              }
-            }
-          }
-        }
-      }
-      if(create_near_conn == true){
-        CreateEdge(ft_it->first, predecessor, PO_NEAR);
-      }
+      CreateEdge(ft_it->first, predecessor, PO_NEAR);
     }
     predecessor = ft_it->first;
   }
   self_f_table->erase(host_id);
+
+  map<int,int>::iterator pom_it;
+  for(pom_it=po_member->begin();pom_it!=po_member->end();pom_it++){
+    CreateEdge(pom_it->first, GetHarmonicDistNode(pom_it->first, po_member), SHORTCUT);
+  }
+  delete po_member;
 }
 
 bool SonPrivateOverlayRouting::MostCommonScCreate(multimap<int, int>* f_freq_table, map<int, int>* host_node_ft, map<int, int>* friend_rt, int friend_id){

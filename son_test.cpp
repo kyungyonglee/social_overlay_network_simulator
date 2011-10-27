@@ -355,7 +355,7 @@ void PoMsgTest(SonMsgDist* son_msg, SonFriendSelect* sfs, map<int,int>* po_creat
     int total_msg = 0;
     if(po_create_nodes->count(fm_it->first) != 0){  //private overlay nodes
       total_msg = son_msg->MulticastDeliever(fm_it->first, msg_recipients, msg_recipients,0);
-    }else{
+    }else{  //no private overlay nodes
       total_msg = son_msg->FloodDeliever(fm_it->first, msg_recipients, 0, 2);
     }
     for(fit = msg_recipients->begin(); fit != msg_recipients->end();fit++){
@@ -365,7 +365,7 @@ void PoMsgTest(SonMsgDist* son_msg, SonFriendSelect* sfs, map<int,int>* po_creat
         (*msg_recipients)[fit->first] = hops;
       }
     }
-    
+
     SonStatistics* son_stat_rt;
     if(routing_hops_stat.count(friend_count) != 0){
       son_stat_rt = routing_hops_stat[friend_count];
