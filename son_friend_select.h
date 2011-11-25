@@ -37,11 +37,24 @@ namespace Starsky {
       void WriteCompleteFriendMap(string file_name);
       map<int, multimap<int, int>* >*  BuildCommonFriendsFreq(string input);
       map<int, map<int, int>* >* GetFriendsMap();
-      map<int, multimap<int, int>* >* GetFreqMap();      
-      void PrintFriendMap();
-    protected:
+      map<int, multimap<int, int>* >* GetFreqMap();   
+      double GetOneHopCC();
+      double GetTwoHopsCC();
+      double GetThreeHopsCC();
+      double GetFourHopsCC();
+      double GetFiveHopsCC();
+      double GetMultipleHopsCC(int hops);
+      void PrintFriendMap();      
+      void CalcNonCommFriendsCC();
+      void GetNoCommonFriendStat();
+      double GetRandomPairCC();      
+      void PrintDegreeDist();
+      void FreeFreqMap();
+    protected:      
+      int CalculateCC(int node1, int node2);
       map<int, map<int, int>* >* _friends_map;   // friend list and common friend
       map<int, multimap<int, int>* >* _common_friend_freq;
+      map<string, int>* _cc_map;
       int _net_size_from_file;
   };
 

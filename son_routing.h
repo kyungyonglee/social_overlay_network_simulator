@@ -48,6 +48,7 @@ namespace Starsky {
       void GetRoutingTableStat();
       static int GetHarmonicDistNode(int source, map<int,int>* target);
     protected:      
+      void AddConnsPerQuarter(int host_id, map<int,int>* host_friends);
       bool AddForwardingPath(int source, int target, int gateway);      
       bool DeleteForwardingPath(int source, int target, int gateway);
       bool DeleteForwardingPath(int source, int target);
@@ -79,19 +80,20 @@ namespace Starsky {
 
   class SonPrivateOverlayRouting : public SonRouting{
     public:
-      SonPrivateOverlayRouting(int net_size, int friend_select_method);
-      SonPrivateOverlayRouting(SonFriendSelect* friends_net);
+      SonPrivateOverlayRouting(int net_size, int friend_select_method, int po_th, int max_po);
+      SonPrivateOverlayRouting(SonFriendSelect* friends_net, int po_th, int max_po);
       map<int, map<int, int>* >* BuildRoutingTable();  
       bool Check();
       int GetGatewayNode(int source, int dst);      
       void PrintForwardTable();
       void GetLimitedPoStat();      
-      map<int, map<int,int>* >* GetJoinablePoMap();
+      map<int, map<int,double>* >* GetJoinablePoMap();
       map<int,int>* GetPoCreateNodes();
     protected:      
       bool IsTrimable(int source, int target);
       void CreatePrivateOverlay(int host_id);
-      bool TrimPonConn(int host_id);      
+      bool TrimPonConn(int host_id);
+      bool TrimPonConn();
       vector<int>* RouteExistAmongFriends(map<int, int>* routing_table, map<int, int>* friends_list, map<int,int>* target_rt);
       void TrimConnections(int host_addr);      
       void CreateOneToOneConns(int host_id);      
@@ -100,12 +102,14 @@ namespace Starsky {
       bool LeastNearConnScCreate(multimap<int, int>* f_freq_table, map<int, int>* host_node_ft, map<int, int>* fr_table, int friend_id, int predecessor);
       bool RandomShortcutCreate(multimap<int, int>* f_freq_table, map<int, int>* host_node_ft, map<int, int>* fr_table, int friend_id);
       int GetPrivateOverlayJoinStat();
-      map<int, map<int, int>* >* BuildJoinablePoMap();
+      map<int, map<int, double>* >* BuildJoinablePoMap();
       map<int,int>* DeterminePoCreateNodes();
       unsigned int _threshhold;
-      map<int, map<int, int>* >* _joinable_po_map;  // a list of nodes that a node will join in the private overlay
-      map<int, multimap<int, int>* >* _score_joinable_po_map; // joinable map of nodes sorted by score
+      unsigned int _max_po;
+      map<int, map<int, double>* >* _joinable_po_map;  // a list of nodes that a node will join in the private overlay
+      map<int, multimap<double, int>* >* _score_joinable_po_map; // joinable map of nodes sorted by score
       map<int,int>* _po_create_nodes;  //a list of nodes that will actually create a private ovelay
+      map<int, map<int,int>* >* _po_members;
   };
 
   class SonClusterRouting : public SonRouting{

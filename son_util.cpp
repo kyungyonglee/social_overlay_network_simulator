@@ -122,7 +122,7 @@ int SonUtil::GetClosestNode(map<int, map<int,int>* >* friends_map, int dest){
 map<int, SonStatistics*>* SonUtil::SummarizeStat(map<int, SonStatistics*>* input_stat_map){
   map<int, SonStatistics*>* summary = new map<int, SonStatistics*>();
   map<int, SonStatistics*>::iterator stat_it;
-  int prev_key = 0, spacing = 10;
+  int prev_key = 0, spacing = 1000;
   SonStatistics* curr_stat;
   for(stat_it=input_stat_map->begin();stat_it!=input_stat_map->end();stat_it++){
     int curr_key = ((stat_it->first/spacing)+1)*spacing;
@@ -193,7 +193,7 @@ void SonStatistics::Merge(SonStatistics* in_stat){
   _count += in_stat->_count;
   _deliver_fail += in_stat->_deliver_fail;
 }
-/*
+
 SonCumStat::SonCumStat(int id):SonStatistics(id){
   _cum_dist_map = new map<int,int>();
 }
@@ -207,7 +207,6 @@ void SonCumStat::AddCumKey(int key){
   if(_cum_dist_map->count(key) != 0){
     old_value = (*_cum_dist_map)[key];
   }
-  old_value++;
   (*_cum_dist_map)[key] = old_value+1;
 }
 
@@ -224,5 +223,3 @@ void SonCumStat::PrintStat(){
     cout <<cum_dist_it->first <<"\t"<<cum_dist_it->second << endl;
   }
 }
-
-*/

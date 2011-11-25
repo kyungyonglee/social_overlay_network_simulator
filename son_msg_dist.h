@@ -32,18 +32,20 @@ namespace Starsky {
   class SonMsgDist{
     public:
       SonMsgDist(SonRouting* routing_info);
-      int GreedyDeliever(int source, int dest, int cur_hops);      
+      int GreedyDeliever(map<int,int>* msg_recipients, int source, int dest, int cur_hops, int* no_friend_hops);
       int FloodDeliever(int source, map<int, int>* dist, int cur_hops, int ttl);
       int MulticastDeliever(int source, map<int, int>* org_recpt, map<int, int>* dist, int cur_hops);
       SonRouting* GetRoutingInfo();      
       static int GetDistance(int addr_a, int addr_b);
       void UpdateMsgOverhead(int id, int total_msg);      
       void PrintMsgOverhead();
+      void SetCrashNodes(int target_number);
     protected:
       SonRouting* _routing_info;
       map<int, map<int, int>* >* _global_routing_table;
       map<int, SonStatistics*>* _msg_overhead;
       map<int, multimap<int,int>* >* _fwd_route;
+      map<int, int>* _failed_nodes;
   };
 }
 #endif

@@ -304,19 +304,21 @@ void KcMsgTest(SonMsgDist* son_msg, SonFriendSelect* sfs){
   map<int, map<int, int>* >* friends_map = sfs->GetFriendsMap();
   map<int, map<int, int>* >::iterator fm_it;
   map<int, SonStatistics*> routing_hops_stat;
-  for(fm_it = friends_map->begin();fm_it != friends_map->end();fm_it++){
+  SonCumStat kc_cum_stat;
+  double run_threshold = 100000.0/(double)friends_map->size();
+  unsigned long total_recipients = 0;
+  for(fm_it = friends_map->begin();fm_it != friends_map->end();fm_it++){    
+    double fr = (double)rand()/(double)RAND_MAX;
+    if(fr > run_threshold) continue;
     map<int, int>* msg_recipients = new map<int, int>();
     map<int, int>::iterator fit;
     int friend_count = fm_it->second->size();
     for(fit = fm_it->second->begin();fit != fm_it->second->end();fit++){
       msg_recipients->insert(pair<int,int>(fit->first,-1));
     }
+    total_recipients += msg_recipients->size();
+//    int total_msg = son_msg->MulticastDeliever(fm_it->first, msg_recipients, msg_recipients,0);      
     int total_msg = son_msg->FloodDeliever(fm_it->first, msg_recipients,0, -1);
-    for(fit = msg_recipients->begin(); fit != msg_recipients->end();fit++){
-      if (fit->second < 0){
-        cout << "root = " << fm_it->first << " neighbor size = " << friend_count << " neighbor = " << fit->first << " : " <<((*friends_map)[fit->first])->size()<<endl;
-      }
-    }
     SonStatistics* son_stat_rt;
     if(routing_hops_stat.count(friend_count) != 0){
       son_stat_rt = routing_hops_stat[friend_count];
@@ -325,6 +327,7 @@ void KcMsgTest(SonMsgDist* son_msg, SonFriendSelect* sfs){
       routing_hops_stat[friend_count] = son_stat_rt;
     }
     son_stat_rt->UpdateStat(msg_recipients);
+    kc_cum_stat.AddCumKey(msg_recipients);
  //   cout << "total generated message = " << total_msg << endl;
     delete msg_recipients;
     son_msg->UpdateMsgOverhead(friend_count, total_msg);
@@ -338,34 +341,64 @@ void KcMsgTest(SonMsgDist* son_msg, SonFriendSelect* sfs){
   delete summ_result;
   cout << endl << endl;
   son_msg->PrintMsgOverhead();
+  cout << endl << endl;
+  kc_cum_stat.PrintStat();
+  cout << endl << "total_recipients= " << total_recipients << endl;
+  
 }
 
-void PoMsgTest(SonMsgDist* son_msg, SonFriendSelect* sfs, map<int,int>* po_create_nodes, map<int, map<int,int>* >* po_join_map){
+void PoMsgTest(SonMsgDist* son_msg, SonFriendSelect* sfs, map<int,int>* po_create_nodes, map<int, map<int,double>* >* po_join_map){
   map<int, map<int, int>* >* friends_map = sfs->GetFriendsMap();
   map<int, map<int, int>* >::iterator fm_it;
   map<int, SonStatistics*> routing_hops_stat;
   map<int, SonStatistics*> fwd_overhead_stat;
+  SonCumStat only_po_cum_stat;
+  SonCumStat no_po_cum_stat;
+  SonCumStat combine_po_cum_stat;
+  SonCumStat all_cum_stat;
+  double run_threshold = 500000.0/(double)friends_map->size();
+  int greedy_run_count = 0;
+  unsigned long total_no_friend_hops = 0, total_recipients=0;
   for(fm_it = friends_map->begin();fm_it != friends_map->end();fm_it++){
+    double fr = (double)rand()/(double)RAND_MAX;
+    if(fr > run_threshold) continue;
     map<int, int>* msg_recipients = new map<int, int>();
     map<int, int>::iterator fit;
     int friend_count = fm_it->second->size();
     for(fit = fm_it->second->begin();fit != fm_it->second->end();fit++){
       msg_recipients->insert(pair<int,int>(fit->first,-1));
     }
+    total_recipients += msg_recipients->size();
     int total_msg = 0;
+    bool is_po = false, is_greedy = false;
     if(po_create_nodes->count(fm_it->first) != 0){  //private overlay nodes
-      total_msg = son_msg->MulticastDeliever(fm_it->first, msg_recipients, msg_recipients,0);
+      total_msg = son_msg->MulticastDeliever(fm_it->first, msg_recipients, msg_recipients,0);      
+//      total_msg = son_msg->FloodDeliever(fm_it->first, msg_recipients,0, -1);
+      is_po = true;
     }else{  //no private overlay nodes
-      total_msg = son_msg->FloodDeliever(fm_it->first, msg_recipients, 0, 2);
+//      total_msg = son_msg->FloodDeliever(fm_it->first, msg_recipients, 0, 6);
+      total_msg = son_msg->FloodDeliever(fm_it->first, msg_recipients, 0, -1);
     }
     for(fit = msg_recipients->begin(); fit != msg_recipients->end();fit++){
       if (fit->second < 0){
-        int hops = son_msg->GreedyDeliever(fm_it->first, fit->first, 1);
+        is_greedy = true;
+        greedy_run_count++;
+        int no_friend_hops = 0;
+        int hops = son_msg->GreedyDeliever(msg_recipients, fm_it->first, fit->first, 1, &no_friend_hops);
         total_msg += hops;
+        total_no_friend_hops += no_friend_hops;
         (*msg_recipients)[fit->first] = hops;
       }
     }
 
+    if(is_po == false){
+      no_po_cum_stat.AddCumKey(msg_recipients);
+    }else if(is_greedy == true){
+      combine_po_cum_stat.AddCumKey(msg_recipients);
+    }else{
+      only_po_cum_stat.AddCumKey(msg_recipients);
+    }
+    all_cum_stat.AddCumKey(msg_recipients);
     SonStatistics* son_stat_rt;
     if(routing_hops_stat.count(friend_count) != 0){
       son_stat_rt = routing_hops_stat[friend_count];
@@ -374,12 +407,14 @@ void PoMsgTest(SonMsgDist* son_msg, SonFriendSelect* sfs, map<int,int>* po_creat
       routing_hops_stat[friend_count] = son_stat_rt;
     }
     son_stat_rt->UpdateStat(msg_recipients);
- //   cout << "total generated message = " << total_msg << endl;
     delete msg_recipients;
     son_msg->UpdateMsgOverhead(friend_count, total_msg);
   }
   map<int, SonStatistics*>::iterator ss_it;
   map<int, SonStatistics*>* summ_result = SonUtil::SummarizeStat(&routing_hops_stat);
+  for(ss_it = routing_hops_stat.begin();ss_it!=routing_hops_stat.end();ss_it++){
+    delete ss_it->second;
+  }  
   cout << endl << endl;
   for(ss_it=summ_result->begin();ss_it != summ_result->end();ss_it++){
     ss_it->second->PrintStat();
@@ -387,6 +422,17 @@ void PoMsgTest(SonMsgDist* son_msg, SonFriendSelect* sfs, map<int,int>* po_creat
   delete summ_result;
   cout << endl<< endl;
   son_msg->PrintMsgOverhead();
+  cout << endl << endl;
+  cout << "total no friend hops = " << total_no_friend_hops << endl;
+  cout << endl << endl;
+  only_po_cum_stat.PrintStat();
+  cout << endl << endl;
+  combine_po_cum_stat.PrintStat();
+  cout << endl << endl;
+  no_po_cum_stat.PrintStat();  
+  cout << endl << endl;
+  all_cum_stat.PrintStat();
+  cout << "greedy_run_count = " << greedy_run_count <<  " total number of message recipients = " << total_recipients << endl;
 }
 
 void MulticastMsgTest(SonMsgDist* son_msg, SonFriendSelect* sfs){
@@ -441,30 +487,49 @@ int main(int argc, char *argv[])
     SonRouting* son_routing;
     SonMsgDist* son_messaging;
 //srand((unsigned)time(0));
-    if(argc == 4){
+    if(argc == 6){
       string filename = argv[1];
       int route_mode = atoi(argv[2]);
-      int msg_mode = atoi(argv[3]);
+      int po_th = atoi(argv[3]);
+      int max_po = atoi(argv[4]);
+      int failed_nodes = atoi(argv[5]);
       string freq_name = filename + ".freq";
       sfs = new SonFriendFromFile(filename);
-//      sfs->CalculateCloseness();
+      sfs->PrintDegreeDist();
+      return 1;
+ //     sfs->CalculateCloseness();
 //      sfs->WriteToFile(freq_name);
-//      sfs->WriteCompleteFriendMap("orkut_all.complete");
+//      sfs->WriteCompleteFriendMap(filename+".complete");
 //      return 1;
+//      sfs->GetRandomPairCC();
+//      sfs->GetOneHopCC();
+//      sfs->GetTwoHopsCC();
+//      sfs->GetThreeHopsCC();
+//      sfs->GetFourHopsCC();
+//      sfs->GetFiveHopsCC();
+//      sfs->GetMultipleHopsCC(1);
       sfs->BuildCommonFriendsFreq(freq_name);
+//      sfs->GetNoCommonFriendStat();
+//      return 1;
+//      sfs->CalcNonCommFriendsCC();
+//      return 1;
 //      sfs->PrintFriendMap();
 //      return 1;
       if (route_mode == 0){
         son_routing = new SonKCoverageRouting(sfs);
       }else if (route_mode == 1){
-        son_routing = new SonPrivateOverlayRouting(sfs);
+        son_routing = new SonPrivateOverlayRouting(sfs, po_th, max_po);
       }else if (route_mode == 2){
         son_routing = new SonClusterRouting(sfs);
       }
       son_routing->BuildRoutingTable();
+//      return 1;
       son_routing->GetRoutingTableStat();
+      return 1;
   //    son_routing->PrintRoutingTable();
       son_messaging = new SonMsgDist(son_routing);
+      sfs->FreeFreqMap();
+      son_messaging->SetCrashNodes(failed_nodes);
       if(route_mode == 0){
         KcMsgTest(son_messaging, sfs);
       }else if(route_mode == 1){
