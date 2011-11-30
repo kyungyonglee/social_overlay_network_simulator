@@ -21,6 +21,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include <iostream>
 #include <map>
 #include <vector>
+#include <string>
 #include "son_util.h"
 
 using namespace std;
@@ -64,6 +65,14 @@ int SonUtil::GetDistance(int addr_a, int addr_b) {
     sm = min(addr_a, addr_b);
     bg = max(addr_a, addr_b);
     return (min( (bg-sm),( (0x7fffffff) - bg + sm) ));
+}
+
+int SonUtil::GetClockwiseDistance(int source, int target){
+  if(target >= source){
+    return (target-source);
+  }else{
+    return (0x7fffffff-source+target);
+  }
 }
 
 int SonUtil::GetClosestNode(int src, map<int,int>* routing_table, int dest){
@@ -151,6 +160,7 @@ map<int,int>* SonUtil::GetInteresctEntry(map<int, int>* rt1, map<int,int>* rt2){
   return ret_map;
 }
 
+
 SonStatistics::SonStatistics(int id) : _id(id){
   _max = 0;
   _min = 0xffffffff;
@@ -221,5 +231,15 @@ void SonCumStat::PrintStat(){
   map<int,int>::iterator cum_dist_it;
   for(cum_dist_it = _cum_dist_map->begin();cum_dist_it!=_cum_dist_map->end();cum_dist_it++){
     cout <<cum_dist_it->first <<"\t"<<cum_dist_it->second << endl;
+  }
+}
+
+bool SonUtil::WithinRange(int target, int begin, int end){
+  if(end > begin){
+    return ((target >= begin) && (target <= end));
+  }else if( begin > end ){
+    return ((target >= begin) || (target <= end));
+  }else{
+    return (begin==target);
   }
 }

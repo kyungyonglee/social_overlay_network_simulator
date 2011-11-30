@@ -62,8 +62,10 @@ namespace Starsky {
       static int GetClosestNode(int src, map<int,int>* routing_table, int dest);    
       static int GetClosestNode(map<int,map<int, int>*>* routing_table, int dest);    
       static int GetDistance(int addr_a, int addr_b);
+      static int GetClockwiseDistance(int source, int target);
       static map<int, SonStatistics*>* SummarizeStat(map<int, SonStatistics*>* input_stat_map);
       static map<int,int>* GetInteresctEntry(map<int, int>* rt1, map<int,int>* rt2);
+      static bool WithinRange(int target, int begin, int end);
   };
 }
 #endif
