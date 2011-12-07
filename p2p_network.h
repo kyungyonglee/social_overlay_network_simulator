@@ -33,8 +33,12 @@ namespace Starsky {
     public:      
       enum P2PConMode{NEAR_CONN, SHORTCUT, UNSTRUCTURED, NUM_ROUTING_MODE};      
       P2PNetwork(int net_size);
+      P2PNetwork(P2PNetwork* base_network);
+      ~P2PNetwork();
+      void InitializeRT();
       void CreateNodeIDs();
-      virtual void CreateNetwork();   
+      void CreateRoutingTable();
+      virtual void CreateNetwork();
       virtual void CheckConnection();
       virtual map<int,int>* GetNodeLists();
       virtual map<int, map<int,int>* >*  GetRoutingTable();
@@ -49,6 +53,7 @@ namespace Starsky {
   class SymphonyP2P : public P2PNetwork{
     public:
       SymphonyP2P(int net_size, int shortcut_num);
+      SymphonyP2P(P2PNetwork* base_network, int shortcut_num);
       void CreateNetwork();
       void CheckConnection();
     protected:
@@ -60,6 +65,7 @@ namespace Starsky {
   class UnstructuredP2P : public P2PNetwork{
     public:
       UnstructuredP2P(int net_size, int conn_num);
+      UnstructuredP2P(P2PNetwork* base_network, int conn_num);
       void CreateNetwork();
       void CheckConnection();
     protected:
@@ -70,8 +76,10 @@ namespace Starsky {
     public:
       SuperPeerP2P(int net_size, int super_peer_num, int sp_conn_num);
       SuperPeerP2P(int super_peer_num,int sp_conn_num, P2PNetwork* base_network);
+      ~SuperPeerP2P();
       map<int,int>* GetSuperpeerMap();
-      map<int,int>* GetNodeLists();
+      map<int,int>* GetNodeLists();    //returns working nodes;not superpeers
+      map<int,int>* GetSuperpeerLists();      
     protected:
       map<int, int>* _superpeer_map;   //no super peer node/superpeer
       P2PNetwork* _non_sp_nodes;

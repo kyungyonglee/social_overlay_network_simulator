@@ -51,5 +51,26 @@ namespace Starsky {
       int TotalNodes;
       int MaxDepth;
   };    
+
+  class P2PNodeFailure{
+    public:
+      P2PNodeFailure(map<int,int>* node_list, int num_failed_node);
+      bool CheckIfFailed(int test_node_id);
+      bool AddFailedNode(int failed_node_id);
+    protected:
+      int _num_failed_nodes;
+      map<int,int> _failed_nodes;
+  };
+
+  class ResDiscResult{
+    public:
+      ResDiscResult();
+      int Count;
+      int FalseResult;
+      long AvgResultAge;
+      long Hops;
+      long TotalMessages;
+      double InCompleteness;
+  };
 }
 #endif

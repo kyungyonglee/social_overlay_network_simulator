@@ -20,10 +20,12 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 */
 
 //#include <stdio.h>
+#include <algorithm>
 #include <iostream>
 #include <sstream>
 #include <fstream>
 #include <math.h>
+
 #include "p2p_message.h"
 #include "son_util.h"
 
@@ -66,7 +68,7 @@ void AttrValuePair::AddAttribute(int attr, string file_name){
     file.close();
   }
   int zipf_size = zipf_value->size();
-  cout << "file name = " << file_name << " attr = " <<attr << " vector size = " << zipf_size << endl;
+//  cout << "file name = " << file_name << " attr = " <<attr << " vector size = " << zipf_size << endl;
   map<int, map<int,int>* >::iterator all_it;
   for(all_it = _attr_value_pair->begin();all_it!=_attr_value_pair->end();all_it++){
     map<int,int>* attr_map = all_it->second;
@@ -163,6 +165,7 @@ map<int, map<int, multimap<int,int>*>*>* AttrValuePair::UpdateToSuperpeers(map<i
 DynamicAttribute::DynamicAttribute(int mean_attr_change_time, int update_period):_mean_attr_dynamic_time(mean_attr_change_time), _attr_update_period(update_period){
   _poisson_dist = std::tr1::poisson_distribution<int>(_mean_attr_dynamic_time);
   ChangeUpdatePeriod(update_period);
+//  _rand_eng.seed(time(NULL));
 }
 void DynamicAttribute::ChangeUpdatePeriod(int new_update_period){
   if(new_update_period <= 0){
@@ -171,8 +174,9 @@ void DynamicAttribute::ChangeUpdatePeriod(int new_update_period){
     _attr_update_period = new_update_period;
   }
 }
-bool DynamicAttribute::CheckIfChanged(int propagation_time){
-  int change_cycle = _poisson_dist(_eng);
+bool DynamicAttribute::CheckIfChanged(int propagation_time){  
+  int change_cycle = _poisson_dist(_rand_eng);
+//  cout << change_cycle << endl;
   int age = rand()%_attr_update_period;
   return (age+propagation_time > change_cycle ? true:false);
 }
@@ -284,14 +288,20 @@ map<int, map<int, vector<int>*>* >* P2PResInfoDhtUpdate::GetDhtResInfo(){
   return _dht_res_info;
 }
 
-P2PMessageDist::P2PMessageDist(map<int, map<int,int>* >* routingt_table) : _global_rt(routingt_table){
+//P2PMessageDist::P2PMessageDist(map<int, map<int,int>* >* routingt_table) : _global_rt(routingt_table){
+//  _node_failures = P2PNodeFailure(NULL, 0);
+//}
 
+P2PMessageDist::P2PMessageDist(map<int, map<int,int>* >* routingt_table, P2PNodeFailure& node_failure) :_global_rt(routingt_table), _node_failures(node_failure){
 }
 
 int P2PMessageDist::P2PTreeMulticast(int source, int begin_addr, int end_addr, P2PAction* actions, bool clockwise){
   bool within_range = SonUtil::WithinRange(source, begin_addr, end_addr);
   map<int,int>* host_rt = (*_global_rt)[source];
   int max_depth = 0;
+  if(_node_failures.CheckIfFailed(source) == true){
+    return 0;
+  }
   if(within_range){
     host_rt->insert(pair<int,int>(source,1));
     map<int, map<int, int>* >* region_alloc = AllocateRegions(host_rt, begin_addr, end_addr, source, clockwise);
@@ -358,7 +368,10 @@ int P2PMessageDist::P2PSequentialCrawling(int host_id, int begin_addr, int end_a
     start_it = _global_rt->begin();
   }
   int visited_nodes = P2PGreedyRouting(host_id,start_it->first, NULL);
-  while(start_it->first < end_addr){    
+  while(start_it->first < end_addr && start_it!=_global_rt->end()){
+    if(_node_failures.CheckIfFailed(start_it->first) == true){
+      return visited_nodes;
+    }    
     visited_nodes++;
     if(actions != NULL){
       if (true == actions->Execute(start_it->first)){   //Execute return true means we have to stop sequential crawling.
@@ -372,22 +385,34 @@ int P2PMessageDist::P2PSequentialCrawling(int host_id, int begin_addr, int end_a
 }
 
 int P2PMessageDist::P2PFlooding(int src_id, int host_id, int ttl, map<int,int>* visited_nodes, P2PAction* actions){  //src=message source, host=msg receiver
-  bool matching, already_visited = false;  
+  bool matching, renew_ttl = false, prev_ttl_is_zero=false;  
+  if(_node_failures.CheckIfFailed(host_id) == true){
+    return 0;
+  }
+  
   if(visited_nodes != NULL){
     if(visited_nodes->count(host_id) != 0){
-      already_visited = true;
       if(((*visited_nodes)[host_id]) < ttl ){
+        if((*visited_nodes)[host_id] == 0){
+          prev_ttl_is_zero = true;
+        }
         (*visited_nodes)[host_id] = ttl;
+        renew_ttl = true;
       }else{
+//        cout << "already gotten message src=" << src_id << " host id = " << host_id <<endl;
         return 0;
       }
     }else{
       (*visited_nodes)[host_id] = ttl;
     }
   }
-  if(actions != NULL && already_visited == false){
-    matching = actions->Execute(host_id);  //Execute return true is true (no terminating flooding)
+  if(actions != NULL && renew_ttl == false){
+    matching = actions->Execute(host_id);  //Execute return true : terminate flooding 
   }  
+  if(matching == true){
+    return 0;
+  }
+  
   map<int,int>* host_rt = (*_global_rt)[host_id];
   map<int,int>::iterator hrt_it;
   int total_messages = 0;
@@ -395,14 +420,17 @@ int P2PMessageDist::P2PFlooding(int src_id, int host_id, int ttl, map<int,int>* 
     for(hrt_it=host_rt->begin();hrt_it!=host_rt->end();hrt_it++){
       if(hrt_it->first != src_id){
         int local_msg_count = 0;
+//        cout << "before sending to chile node : src = "<< src_id << " host id = " << host_id << " total message = " << total_messages << endl;
         local_msg_count = P2PFlooding(host_id, hrt_it->first, ttl-1, visited_nodes, actions);
-        if(already_visited == false){
-          total_messages += local_msg_count;
+//        cout << "return from child nodes: src = " << src_id << " host id = " << host_id << " total message = " <<local_msg_count << endl;
+        total_messages += local_msg_count;
+        if(renew_ttl == false || prev_ttl_is_zero==true){
           total_messages++;
         }
       }
     }
   }
+//  cout << "return to parent node src = " << src_id << " host id = " << host_id << " total message = "<< total_messages << endl;
   return total_messages;
 }
 
@@ -440,7 +468,7 @@ map<int, map<int, int>* >* P2PMessageDist::AllocateRegions(map<int,int>* routing
   return allocation;
 }
 
-P2PRdQuery::P2PRdQuery(AttrValuePair* attribute_values, int mode, bool clockwise) : Mode(mode), AttributeValues(attribute_values), Clockwise(clockwise){
+P2PRdQuery::P2PRdQuery(AttrValuePair* attribute_values, int mode, bool clockwise, int max_target_num) : Mode(mode), AttributeValues(attribute_values), Clockwise(clockwise){
   map<int, vector<int>* >* attr_freq_count = AttributeValues->GetAttrFreq();
   Attribute = rand()%attr_freq_count->size();
   vector<int>* attr_freq = (*attr_freq_count)[Attribute];
@@ -449,50 +477,118 @@ P2PRdQuery::P2PRdQuery(AttrValuePair* attribute_values, int mode, bool clockwise
   Begin = t1 < t2 ? t1 : t2;
   End = t1 < t2 ? t2: t1;
   CurHops = 0;
-  Number = (rand() % 99)+1;
+  DistanceFromRoot = 0;
+  Number = (rand() % max_target_num);
+  Number = Number == 0 ? 1 : Number;
   Result = new map<int,int>();
   if(mode == OPTIMAL || mode == FIRST_FIT){
     AddrBegin = 0;
     AddrEnd = 0x7fffffff;
   }else if(mode == DHT){
-    DetermineQueryRange();
+    DetermineDhtQueryRange();
   }
+  TotalMsgs = 0;
+  MaxTargetNum = max_target_num;
 }
 
 P2PRdQuery::P2PRdQuery(){
   Result = new map<int,int>();
   CurHops = 0;
+  DistanceFromRoot = 0;
+  TotalMsgs = 0;
 }
 
-bool P2PRdQuery::CheckResultCorrectness(){
-  if(Result->size() >= Number){
+P2PRdQuery::~P2PRdQuery(){
+  delete Result;
+}
+
+bool P2PRdQuery::CheckResultCorrectness(P2PNodeFailure & failed_nodes, map<int, map<int, ResDiscResult*>* >& stat){
+  int fail_node_count = 0, stat_key;
+//  bool stat_fill = stat.size() != 0 ? true : false;
+  bool stat_fill = true;
+  int real_node_count = 0;
+  if(Result->size() >= Number && stat_fill == false){
 //    cout << "discovered all required nodes : "<<endl;
   }else{
     map<int, map<int,vector<int>* >* >* value_nodes_map = AttributeValues->GetValueNodeList();
     map<int, vector<int>* >* vnmap = (*value_nodes_map)[Attribute];
-    int real_node_count = 0;
+    int total_nodes_num = AttributeValues->GetAttrValuePair()->size();
     for(int i=Begin;i<=End;i++){
       if(vnmap->count(i) != 0){
         vector<int>* node_list = (*vnmap)[i];
-        real_node_count += node_list->size();
+        for(int k=0;k<node_list->size();k++){
+          if(failed_nodes.CheckIfFailed((*node_list)[k]) == false){
+            real_node_count++;
+          }
+        }
       }
     }
-    if(Result->size() != real_node_count){
-      cout << "Query no complete result size: " << Result->size() << " Real satisfying: " << real_node_count << " attribute = " <<Attribute << " begin = " << Begin << " end = " << End << " Begion addr = " << AddrBegin << " End addr = " <<AddrEnd << endl;
+    if((Result->size() != real_node_count) && (Result->size() < Number)){
+//      double queried_region = AddrEnd > AddrBegin ? (AddrEnd-AddrBegin)/(double)RAND_MAX : ((RAND_MAX-AddrBegin) + AddrEnd)/(double)RAND_MAX;
+//      cout << "Query no complete result size: " << Result->size() << " target number = " << Number<< " Real satisfying: " << real_node_count << " attribute = " <<Attribute << " begin = " << Begin << " end = " << End << " Begion addr = " << AddrBegin << " End addr = " <<AddrEnd << "queried region = " << queried_region <<endl;
     }
+    stat_key = ceil((real_node_count/(double)total_nodes_num)*10) *10;
   }
+
   map<int,int>::iterator result_it;
   map<int, map<int,int>* >* av_pair = AttributeValues->GetAttrValuePair();
+  long total_result_age = 0;
   for(result_it=Result->begin();result_it!=Result->end();result_it++){
+    total_result_age += result_it->second;
+    fail_node_count = failed_nodes.CheckIfFailed(result_it->first) == true ? fail_node_count+1 : fail_node_count;
     map<int,int>* host_av = (*av_pair)[result_it->first];
     if((*host_av)[Attribute] < Begin || (*host_av)[Attribute] >End){
-      cout << "in correct result returned : " <<result_it->first << " Attribute = " << Attribute << " Value = " <<(*host_av)[Attribute]<< " Begin: " << Begin << " End: " << End<<endl;
+      cout << "incorrect result returned : " <<result_it->first << " Attribute = " << Attribute << " Value = " <<(*host_av)[Attribute]<< " Begin: " << Begin << " End: " << End<<endl;
     }
+  }
+/*  
+  if(fail_node_count != 0){
+    cout << "the query result is not up-to-date with stale result  = " << fail_node_count << endl;
+    if((Result->size() >= Number) && ((Result->size() - fail_node_count) < Number)){
+      cout << "The query is not satisfied due to the stale informaion" << endl;
+    }
+  }
+*/  
+  long avg_res_age = Result->size() != 0 ? total_result_age/Result->size() : 0;
+  if (stat_key == 0){
+    return false;
+  }
+  if(stat_fill == true){
+    map<int, ResDiscResult*>* local_stat;
+    if(stat.count(stat_key) != 0){
+      local_stat = stat[stat_key];
+    }else{
+      local_stat = new map<int, ResDiscResult*>();
+      stat[stat_key] = local_stat;
+    }
+    
+    ResDiscResult* entry;
+    int target_num_key = Number/(MaxTargetNum/3);
+    if(local_stat->count(target_num_key) != 0){
+      entry = (*local_stat)[target_num_key];
+    }else{
+      entry = new ResDiscResult();
+      (*local_stat)[target_num_key] = entry;
+    }
+    
+    entry->Count = entry->Count + 1;
+    entry->Hops = entry->Hops + CurHops;
+    entry->TotalMessages = entry->TotalMessages + TotalMsgs;
+    int temp = min(Number,(int)(Result->size() - fail_node_count));
+    double incompleteness =  (real_node_count - (Result->size()-fail_node_count))*(Number - temp)/ (double)(real_node_count*Number);
+    entry->InCompleteness = entry->InCompleteness + incompleteness;
+    entry->AvgResultAge = entry->AvgResultAge + avg_res_age;
+    entry->FalseResult = entry->FalseResult + fail_node_count;
   }
   return true;
 }
 
-void P2PRdQuery::DetermineQueryRange(){
+bool P2PRdQuery::CheckResultCorrectness(P2PNodeFailure& failed_nodes){
+  map<int, map<int, ResDiscResult*>* > result;
+  CheckResultCorrectness(failed_nodes, result);
+}
+
+void P2PRdQuery::DetermineDhtQueryRange(){
   map<int, map<int, double>* >*  attr_count = AttributeValues->GetAttrCount();
   map<int, double>* attr_dist = (*attr_count)[Attribute];
   map<int, double>::iterator addr_it = attr_dist->find(Begin);
@@ -506,17 +602,37 @@ void P2PRdQuery::DetermineQueryRange(){
   AddrEnd = (int)((addr_it->second)*RAND_MAX);
 }
 
+void P2PRdQuery::DetermineAllQueryRange(){
+  AddrBegin = 0;
+  AddrEnd = RAND_MAX;
+}
+
+void P2PRdQuery::DetermineSubRegionQuery(double fraction, int host_id){
+  map<int, map<int, double>* >*  attr_count = AttributeValues->GetAttrCount();
+  map<int, double>* attr_dist = (*attr_count)[Attribute];
+  map<int, double>::iterator begin_addr_it = attr_dist->find(Begin);
+  map<int, double>::iterator end_addr_it = attr_dist->find(End);  
+  double begin_cum = begin_addr_it == attr_dist->begin() ? 0.0 : (--begin_addr_it)->second;
+  double frac_region = end_addr_it->second - begin_cum;
+  int expected_nodes = frac_region * AttributeValues->GetAttrValuePair()->size();
+  int os_addr_space = (min(1.0, (Number/(double)expected_nodes)*fraction) * RAND_MAX)/2;
+  AddrEnd = host_id + os_addr_space < 0 ? os_addr_space - (RAND_MAX-host_id) : host_id+os_addr_space;
+  AddrBegin = host_id - os_addr_space < 0 ? RAND_MAX - (os_addr_space-host_id) : host_id - os_addr_space;
+}
+
+void P2PRdQuery::Initialize(){
+  Result->clear();
+  CurHops = 0;
+  TotalMsgs = 0;
+  AddrBegin = -1;
+  AddrEnd = -1;
+}
 int P2PRdQuery::CheckResultValidity(int dynamic_period, int res_update_period){
   DynamicAttribute da_tester = DynamicAttribute(dynamic_period, res_update_period);
   map<int,int>::iterator res_it;
-  int latency = 50, change_num=0;
+  int latency = 1, change_num=0;
   for(res_it=Result->begin();res_it!=Result->end();res_it++){
     change_num = da_tester.CheckIfChanged((res_it->second)*latency)==true?change_num+1:change_num;
   }
   return change_num;
 }
-
-P2PRdQuery::~P2PRdQuery(){
-  delete Result;
-}
-

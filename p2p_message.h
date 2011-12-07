@@ -36,7 +36,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 using namespace std;
 namespace Starsky {
-  enum P2PRdQueryMode{FIRST_FIT, SUB_REGION, OPTIMAL, DHT, FLOODING};
+  enum P2PRdQueryMode{FIRST_FIT, SUB_REGION, OPTIMAL, DHT, FLOODING, NODE_COUNT};
   class AttrValuePair{
     public:      
       AttrValuePair(map<int,int>* node_list);
@@ -61,7 +61,7 @@ namespace Starsky {
       void ChangeUpdatePeriod(int new_update_period);
       bool CheckIfChanged(int propagation_time);
     protected:
-      std::tr1::mt19937 _eng;
+      std::tr1::ranlux64_base_01 _rand_eng;
       std::tr1::poisson_distribution<int> _poisson_dist;
       int _mean_attr_dynamic_time; //in seconds
       int _attr_update_period; //in seconds
@@ -81,7 +81,8 @@ namespace Starsky {
   };
   class P2PMessageDist{
     public:
-      P2PMessageDist(map<int, map<int,int>* >* routingt_table);
+//      P2PMessageDist(map<int, map<int,int>* >* routingt_table);
+      P2PMessageDist(map<int, map<int,int>* >* routingt_table, P2PNodeFailure& node_failure);
       int P2PTreeMulticast(int source, int begin_addr, int end_addr, P2PAction* actions, bool clockwise);
       int P2PGreedyRouting(int source, int target, P2PAction* actions);
       int P2PSequentialCrawling(int host_id, int begin_addr, int end_addr, P2PAction* actions);      
@@ -90,17 +91,22 @@ namespace Starsky {
     protected:      
       static map<int, map<int, int>* >* AllocateRegions(map<int,int>* routing_table, int begin_addr, int end_addr, int exclude, bool clockwise);
       map<int, map<int,int>* >* _global_rt;
+      P2PNodeFailure _node_failures;
   };
 
   class P2PRdQuery : public GlobalClass{
     public:
-      P2PRdQuery(AttrValuePair* attribute_values, int mode, bool clockwise);
+      P2PRdQuery(AttrValuePair* attribute_values, int mode, bool clockwise, int max_target_num);
       P2PRdQuery();
       ~P2PRdQuery();      
-      bool CheckResultCorrectness();
-      void DetermineQueryRange();
+      bool CheckResultCorrectness(P2PNodeFailure& failed_nodes);
+      bool CheckResultCorrectness(P2PNodeFailure & failed_nodes, map<int, map<int, ResDiscResult*>* >& stat);
+      void DetermineDhtQueryRange();      
+      void DetermineSubRegionQuery(double fraction, int host_id);    
+      void DetermineAllQueryRange();
+      void Initialize();
       int CheckResultValidity(int dynamic_period, int res_update_period);
-      
+
       int Attribute;
       int Begin;
       int End;
@@ -108,7 +114,10 @@ namespace Starsky {
       int AddrEnd;
       int Number;
       int Mode;
+      int DistanceFromRoot;
       int CurHops;
+      int TotalMsgs;
+      int MaxTargetNum;
       bool Clockwise;
       map<int, int>* Result; //key=node id, value = time
       AttrValuePair* AttributeValues; 

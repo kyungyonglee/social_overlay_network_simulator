@@ -31,6 +31,30 @@ P2PNetwork::P2PNetwork(int net_size) : _net_size(net_size){
   _node_list = new map<int, int>();    
   _routing_table = new map<int, map<int,int>* >();
   CreateNodeIDs();
+  CreateRoutingTable();
+}
+
+P2PNetwork::P2PNetwork(P2PNetwork* base_network){
+  _node_list = base_network->GetNodeLists();
+  _routing_table = new map<int, map<int,int>* >();
+  _net_size = _node_list->size();
+  CreateRoutingTable();
+}
+
+P2PNetwork::~P2PNetwork(){
+//  delete _node_list;
+  map<int, map<int,int>* >::iterator rt_it;
+  for(rt_it=_routing_table->begin();rt_it!=_routing_table->end();rt_it++){
+    delete rt_it->second;
+  }
+  delete _routing_table;
+}
+
+void P2PNetwork::InitializeRT(){
+  map<int, map<int,int>* >::iterator rt_it;
+  for(rt_it=_routing_table->begin();rt_it!=_routing_table->end();rt_it++){
+    rt_it->second->clear();
+  }
 }
 
 void P2PNetwork::CreateNodeIDs(){
@@ -40,11 +64,16 @@ void P2PNetwork::CreateNodeIDs(){
       id = rand();
     }
     _node_list->insert(pair<int,int>(id, 1));
-    map<int,int>* each_rt = new map<int,int>();
-    (*_routing_table)[id] = each_rt;
   }
 }
 
+void P2PNetwork::CreateRoutingTable(){
+  map<int,int>::iterator node_it;
+  for(node_it=_node_list->begin();node_it!=_node_list->end();node_it++){
+    map<int,int>* each_rt = new map<int,int>();
+    (*_routing_table)[node_it->first] = each_rt;
+  }
+}
 
 bool P2PNetwork::CreateEdge(int host, int target, int mode){
   if((_routing_table->count(host) == 0) || (_routing_table->count(target) == 0) || host == target){
@@ -87,6 +116,11 @@ void P2PNetwork::CreateNetwork(){}
 void P2PNetwork::CheckConnection(){}
 
 SymphonyP2P::SymphonyP2P(int net_size, int shortcut_num) : P2PNetwork(net_size), _num_shortcut(shortcut_num){
+  CreateNetwork();
+}
+
+SymphonyP2P::SymphonyP2P(P2PNetwork * base_network, int shortcut_num) : P2PNetwork(base_network), _num_shortcut(shortcut_num){
+  InitializeRT();
   CreateNetwork();
 }
 
@@ -149,6 +183,11 @@ UnstructuredP2P::UnstructuredP2P(int net_size, int conn_num): P2PNetwork(net_siz
   CreateNetwork();
 }
 
+UnstructuredP2P::UnstructuredP2P(P2PNetwork * base_network, int conn_num) : P2PNetwork(base_network), _conn_num(conn_num){
+  InitializeRT();
+  CreateNetwork();
+}
+
 void UnstructuredP2P::CreateNetwork(){
   map<int,int>::iterator node_it;
   map<int,int>::iterator node_advance_it;
@@ -187,6 +226,12 @@ SuperPeerP2P::SuperPeerP2P(int super_peer_num,int sp_conn_num, P2PNetwork* base_
   _non_sp_nodes = base_network;
   DetermineSuperpeer();
 }
+
+SuperPeerP2P::~SuperPeerP2P(){
+  delete _superpeer_map;
+  delete _non_sp_nodes;
+}
+
 map<int,int>* SuperPeerP2P::GetSuperpeerMap(){
   return _superpeer_map;
 }
@@ -196,20 +241,27 @@ void SuperPeerP2P::DetermineSuperpeer(){
   map<int,int>::iterator nsp_it;
   map<int, vector<int> > temp_count;
   for(nsp_it=non_sp_nodes->begin();nsp_it!=non_sp_nodes->end();nsp_it++){
+    map<int,int>::iterator ub_it = _node_list->begin();
+    advance(ub_it, rand()%_node_list->size());
+/*    
     map<int,int>::iterator ub_it = _node_list->upper_bound(nsp_it->first);
     if(ub_it == _node_list->end()){
       ub_it--;
     }
+*/    
     _superpeer_map->insert(pair<int,int>(nsp_it->first, ub_it->first));
     (temp_count[ub_it->first]).push_back(nsp_it->first);
   }
   map<int, vector<int> >::iterator smap_it;
-  for(smap_it=temp_count.begin();smap_it!=temp_count.end();smap_it++){
-    cout << smap_it->first << " : size = " << smap_it->second.size() << endl;
-  }
+ // for(smap_it=temp_count.begin();smap_it!=temp_count.end();smap_it++){
+ //   cout << smap_it->first << " : size = " << smap_it->second.size() << endl;
+ // }
 }
 
 map<int,int>* SuperPeerP2P::GetNodeLists(){
   return _non_sp_nodes->GetNodeLists();
 }
 
+map<int,int>* SuperPeerP2P::GetSuperpeerLists(){
+  return _node_list;
+}

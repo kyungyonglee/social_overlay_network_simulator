@@ -28,7 +28,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 using namespace Starsky;
 using namespace std;
 
-P2PAction::P2PAction(map<string, GlobalClass*>* channel) : _channel(channel){
+P2PAction::P2PAction(map<string, GlobalClass*>* channel, P2PNodeFailure& node_failure) : _channel(channel), _node_failure(node_failure){
 
 }
 
@@ -44,8 +44,9 @@ map<string, GlobalClass*>* P2PAction::GetChannel(){
   return _channel;
 }
 
-ResourceDiscoveryAct::ResourceDiscoveryAct(map<string,GlobalClass*>* channel, map<int, map<int,int>* >* global_rt) : P2PAction(channel), _routing_table(global_rt){
+ResourceDiscoveryAct::ResourceDiscoveryAct(map<string,GlobalClass*>* channel, map<int, map<int,int>* >* global_rt, P2PNodeFailure& node_failure) : P2PAction(channel, node_failure), _routing_table(global_rt){
   _child_actions = new multimap<int, ResourceDiscoveryAct*>();
+  _update_period = 1;
 }
 
 ResourceDiscoveryAct::~ResourceDiscoveryAct(){
@@ -53,18 +54,24 @@ ResourceDiscoveryAct::~ResourceDiscoveryAct(){
 }
 
 bool ResourceDiscoveryAct::Execute(int host_id){
+  if(_node_failure.CheckIfFailed(host_id) == true){
+    return true;
+  }
   P2PRdQuery* query = _channel->count("query")!=0? (P2PRdQuery*)((*_channel)["query"]):NULL;
   if(query == NULL){
     return true;
   } 
   bool satisfy = Matchmaking(host_id, query);
+  map<int,int>* result = query->Result;
   if(satisfy == true){
-    map<int,int>* result = query->Result;
-    result->insert(pair<int,int>(host_id,1));
+    result->insert(pair<int,int>(host_id, rand()%_update_period));
   }
+  
+  (query->DistanceFromRoot)++;
   map<int, map<int, int>* >* region_asgn = P2PMessageDist::RecursiveTreeAssign((*_routing_table)[host_id], host_id, query->AddrBegin, query->AddrEnd, query->Clockwise);
   map<int, map<int, int>* >::iterator ra_it;
-  for(ra_it=region_asgn->begin();ra_it!=region_asgn->end();ra_it++){
+  for(ra_it=region_asgn->begin();ra_it!=region_asgn->end();ra_it++){    
+    query->TotalMsgs = query->TotalMsgs + 1;
     map<int,int>* assign = ra_it->second;
     map<string,GlobalClass*>* arguments = new map<string,GlobalClass*>();
     P2PRdQuery* child_query = new P2PRdQuery();
@@ -73,14 +80,13 @@ bool ResourceDiscoveryAct::Execute(int host_id){
     child_query->AddrBegin = assign_it->first;
     child_query->AddrEnd = assign_it->second;
     arguments->insert(pair<string,GlobalClass*>("query", child_query));
-    ResourceDiscoveryAct* child_act = new ResourceDiscoveryAct(arguments, _routing_table);
+    ResourceDiscoveryAct* child_act = new ResourceDiscoveryAct(arguments, _routing_table, _node_failure);
     child_act->Execute(ra_it->first);
     _child_actions->insert(pair<int, ResourceDiscoveryAct*>(child_query->CurHops, child_act));
     delete assign;
   }
   delete region_asgn;
 
-  int child_count = _child_actions->size();
   Aggregate();
   FreeChildActions();
   return true;
@@ -96,12 +102,13 @@ bool ResourceDiscoveryAct::Aggregate(){
     P2PRdQuery* child_result = (P2PRdQuery*)((*channel)["query"]);
     map<int,int>* result = child_result->Result;
     map<int,int>::iterator rit;
+    query->TotalMsgs = query->TotalMsgs + child_result->TotalMsgs;
     for(rit=result->begin();rit!=result->end();rit++){
       (*aggr_result)[rit->first] = rit->second;
     }    
-    query->CurHops = (rda_it->first)+1;
-    if(aggr_result->size() >= query->Number){
-      break;
+
+    if(aggr_result->size() < query->Number){
+      query->CurHops = (rda_it->first)+1; //useful for first-fit case
     }
   }
 
@@ -123,15 +130,17 @@ void ResourceDiscoveryAct::CloneQueryClass(P2PRdQuery* host, P2PRdQuery* copied)
   copied->Mode = host->Mode;
   copied->Number = host->Number;
   copied->AttributeValues = host->AttributeValues;
+  copied->DistanceFromRoot = host->DistanceFromRoot;
 }
 bool ResourceDiscoveryAct::FreeChildActions(){
   multimap<int, ResourceDiscoveryAct*>::iterator rda_it;
   for(rda_it=_child_actions->begin();rda_it!=_child_actions->end();rda_it++){
     ResourceDiscoveryAct* rda = rda_it->second;
     map<string, GlobalClass*>* channel = rda->GetChannel();
-    map<string,GlobalClass*>::iterator cit;
-    for(cit=channel->begin();cit!=channel->end();cit++){
-      delete cit->second;
+    map<string, GlobalClass*>::iterator cit;
+    for(cit=channel->begin();cit != channel->end();cit++){
+      P2PRdQuery* rdq = (P2PRdQuery*)(cit->second);
+      delete rdq;
     }
     delete channel;
     delete rda;
@@ -147,11 +156,14 @@ bool ResourceDiscoveryAct::Matchmaking(int host_id, P2PRdQuery* query){
   return false;
 }
 
-DhtResDiscAct::DhtResDiscAct(map<string,GlobalClass*>* channel, map<int, map<int, vector<int>*>* >* dht_res_info) : P2PAction(channel), _dht_res_info(dht_res_info){
-
+DhtResDiscAct::DhtResDiscAct(map<string,GlobalClass*>* channel, map<int, map<int, vector<int>*>* >* dht_res_info, P2PNodeFailure& node_failure) : P2PAction(channel, node_failure), _dht_res_info(dht_res_info){
+  _update_period = 300;
 }
 
 bool DhtResDiscAct::Execute(int host_id){
+  if(_node_failure.CheckIfFailed(host_id) == true){
+    return true;
+  }  
   P2PRdQuery* query = _channel->count("query")!=0? (P2PRdQuery*)((*_channel)["query"]):NULL;
   if(query == NULL){
     return true;
@@ -167,7 +179,7 @@ bool DhtResDiscAct::Execute(int host_id){
       for(int i=0;i<candidate->size();i++){
         map<int,int>* local_pair = (*attr_val_pairs)[(*candidate)[i]];
         if(((*local_pair)[query->Attribute] >= query->Begin) && ((*local_pair)[query->Attribute] <= query->End)){
-          query->Result->insert(pair<int,int>((*candidate)[i], host_id));
+          query->Result->insert(pair<int,int>((*candidate)[i], rand()%_update_period));
         }
       }
     }
@@ -179,25 +191,35 @@ bool DhtResDiscAct::Execute(int host_id){
   }
 }
 
-SingleResDiscAct::SingleResDiscAct(map<string, GlobalClass*>* channel):P2PAction(channel){
+SingleResDiscAct::SingleResDiscAct(map<string, GlobalClass*>* channel, P2PNodeFailure& node_failure):P2PAction(channel, node_failure){
+  _update_period = 1;
 }
 
-bool SingleResDiscAct::Execute(int host_id){
+bool SingleResDiscAct::Execute(int host_id){   //returning true will terminate the query propagation
+  if(_node_failure.CheckIfFailed(host_id) == true){
+    return false;
+  }  
   P2PRdQuery* query = _channel->count("query")!=0? (P2PRdQuery*)((*_channel)["query"]):NULL;
-  if(query != NULL){
+  if(query != NULL){    
+    query->DistanceFromRoot = query->DistanceFromRoot + 1;
     if(ResourceDiscoveryAct::Matchmaking(host_id, query) == true){
-      query->Result->insert(pair<int,int>(host_id,1));
-      return true;
+      query->Result->insert(pair<int,int>(host_id, rand()%_update_period));      
+      query->DistanceFromRoot = query->DistanceFromRoot - 1;
+      return false;
     }
   }
+  query->DistanceFromRoot = query->DistanceFromRoot - 1;
   return false;
-}
+} 
 
-SuperpeerResDiscAct::SuperpeerResDiscAct(map<string, GlobalClass*>* channel, map<int, map<int, multimap<int,int>*>*>* spav_asgn):P2PAction(channel), _sp_av_assignment(spav_asgn){
-
+SuperpeerResDiscAct::SuperpeerResDiscAct(map<string, GlobalClass*>* channel, map<int, map<int, multimap<int,int>*>*>* spav_asgn, P2PNodeFailure& node_failure):P2PAction(channel, node_failure), _sp_av_assignment(spav_asgn){
+  _update_period = 300;
 }
 
 bool SuperpeerResDiscAct::Execute(int host_id){
+  if(_node_failure.CheckIfFailed(host_id) == true){
+    return false;
+  }
   bool matching = false;
   P2PRdQuery* query = _channel->count("query")!=0? (P2PRdQuery*)((*_channel)["query"]):NULL;
   map<int, multimap<int,int>*>* avn = _sp_av_assignment->count(host_id)!=0?(*_sp_av_assignment)[host_id]:NULL;
@@ -209,16 +231,18 @@ bool SuperpeerResDiscAct::Execute(int host_id){
       for(int q=query->Begin;q<=query->End;q++){
         range = value_node->equal_range(q);
         for(vn_it = range.first;vn_it!=range.second;vn_it++){
-          query->Result->insert(pair<int,int>(vn_it->second,1));
-          matching = true;
+          query->Result->insert(pair<int,int>(vn_it->second,rand()%_update_period));
         }
       }      
     }
   }
+  if(query->Result->size() >= query->Number){    
+    matching = true;
+  }
   return matching;
 }
 
-P2PNodeCountAct::P2PNodeCountAct(map<string,GlobalClass*>* channel) : P2PAction(channel){
+P2PNodeCountAct::P2PNodeCountAct(map<string,GlobalClass*>* channel, P2PNodeFailure& node_failure) : P2PAction(channel, node_failure){
 }
 
 bool P2PNodeCountAct::Execute(){
@@ -234,5 +258,8 @@ bool P2PNodeCountAct::Execute(){
 }
 
 bool P2PNodeCountAct::Execute(int host_id){
+  if(_node_failure.CheckIfFailed(host_id) == true){
+    return false;
+  }  
   Execute();
 }
