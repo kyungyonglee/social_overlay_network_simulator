@@ -70,8 +70,41 @@ void PrintQueryStat(map<int, map<int, ResDiscResult*>* >& stat, string prefix){
     map<int, ResDiscResult*>::iterator sub_it;
     for(sub_it = all_it->second->begin();sub_it!=all_it->second->end();sub_it++){
       ResDiscResult* result = sub_it->second;
-      cout <<prefix <<"\t" << all_it->first <<"\t"<< sub_it->first  <<"\t"<< result->Count << "\t" << (result->Hops/result->Count) << "\t" << (result->InCompleteness/result->Count) << "\t" << (result->TotalMessages/result->Count) << "\t" << (result->AvgResultAge/result->Count) << "\t" << (result->FalseResult/(double)result->Count)  <<endl;
+      cout <<prefix <<"\t" << all_it->first <<"\t"<< sub_it->first  <<"\t"<< result->Count << "\t" << (result->Hops/result->Count) << "\t" << result->MaxHops << "\t" << result->MinHops << "\t" << (result->Completeness/result->Count) << "\t" << (result->TotalMessages/result->Count) << "\t"  << result->MaxMessages << "\t" << result->MinMessages << "\t" << (result->AvgResultAge/result->Count) << "\t" << (result->FalseResult/(double)result->Count)  << "\t" << (result->TotalQueriedNodes/result->Count) <<endl;
     }
+  }
+}
+
+void PrintCoverageStat(string prefix, map<double, vector<double>* >& result){
+  map<double, vector<double>* >::iterator res_it;
+  
+  for(res_it=result.begin();res_it!=result.end();res_it++){
+    vector<double>* covg_vector = res_it->second;
+    double sum=0.0, avg=0.0, max=0.0, min=10000000.0;
+    multimap<double, int> temp_buf;
+    for(int i=0;i<covg_vector->size();i++){
+      cout << prefix << "\t" << res_it->first << "\t" << (*covg_vector)[i] << endl;
+//      temp_buf.insert(pair<double,int>((*covg_vector)[i],1));
+//      sum += (*covg_vector)[i];
+//      min = min <(*covg_vector)[i] ? min : (*covg_vector)[i];
+//      max = max < (*covg_vector)[i] ? (*covg_vector)[i] : max;
+    }
+/*    
+    avg = sum/covg_vector->size();
+    double sqared_sum = 0.0;
+    for(int j=0;j<covg_vector->size();j++){
+      sqared_sum += pow((avg-(*covg_vector)[j]),2);
+    }    
+    double std_dev = sqared_sum/covg_vector->size();
+    int size = temp_buf.size();
+    multimap<double,int>::iterator tbit = temp_buf.begin();
+    advance(tbit, size/95);
+    double low_1 = tbit->first;
+    tbit = temp_buf.begin();
+    advance(tbit, size-(size/95));
+    double high_1 = tbit->first;
+*/    
+//    cout << res_it->first << "\t" << avg << "\t" << std_dev <<"\t"<< low_1 << "\t" << high_1 << endl;
   }
 }
 
@@ -84,23 +117,39 @@ void RunUnstructured(P2PNetwork* base_network, AttrValuePair* avp, P2PMessageDis
 void RunSuperpeer(P2PNetwork* base_network, AttrValuePair* avp, P2PMessageDist& msg_dist){
 }
 
+void CompareIncompleteness(map<int, map<int, ResDiscResult*>* >& better, map<int, map<int, ResDiscResult*>* >& worse){
+  map<int, map<int, ResDiscResult*>* >::iterator better_it;
+  for(better_it=better.begin();better_it!=better.end();better_it++){
+    map<int, ResDiscResult*>* bmap = better_it->second;
+    map<int, ResDiscResult*>::iterator bmap_it;
+    for(bmap_it=bmap->begin();bmap_it!=bmap->end();bmap_it++){
+      ResDiscResult* better_res = bmap_it->second;
+      ResDiscResult* worse_res = (*(worse[better_it->first]))[bmap_it->first];
+      if(better_res->InCompleteness > worse_res->InCompleteness){
+        cout << "This should not happen"<< endl;
+      }
+    }
+  }
+}
 #ifdef SIMULATION
 int main(int argc, char *argv[]){
   srand((unsigned)time(0));  
-  int num_node, ttl, num_failed_nodes;
+  int num_node, ttl, num_failed_nodes, redundant_tree;
   int total_hops = 0, run_index=0, target_run_index = 1000;
-  int node_index = 0, spacing, max_target_num = 99;
+  int node_index = 0, spacing, max_target_num = 9999;
   
-  if(argc == 4){
+  if(argc == 5){
     num_node = atoi(argv[1]);
     ttl = atoi(argv[2]);
     num_failed_nodes = atoi(argv[3]);
+    redundant_tree = atoi(argv[4]);
   }else{
-    cout << "Usage : p2p_network network_size ttl number_of_failed_nodes"<< endl;
+    cout << "Usage : p2p_network network_size ttl number_of_failed_nodes redundant_tree(0:no 1:Yes)"<< endl;
     return 1;
   }
   
   P2PNetwork* p2p = new P2PNetwork(num_node);
+  map<int, map<int, ResDiscResult*>* > tree_all_query_stat;
   map<int, map<int, ResDiscResult*>* > ff_query_stat;
   map<int, map<int, ResDiscResult*>* > sr_query_stat;
   map<int, map<int, ResDiscResult*>* > dht_query_stat;
@@ -121,17 +170,17 @@ int main(int argc, char *argv[]){
 
   P2PAction* res_disc_act;
   map<int,int>::iterator node_it;
-  P2PNodeFailure failed_nodes = P2PNodeFailure(p2p->GetNodeLists(), num_failed_nodes);   // for super-peer, it will be non-super-peer nodes
+  P2PNodeFailure* failed_nodes = new P2PNodeFailure(p2p->GetNodeLists(), num_failed_nodes);   // for super-peer, it will be non-super-peer nodes
 
 //add failed node among super peerss; same ratio with overall failure
   map<int,int>* sp_nodes = superpeer_net.GetSuperpeerLists();
   map<int,int>::iterator spn_it;
   int sp_fail_node = (superpeer_nodes_num/(double)num_node) * num_failed_nodes;
-  cout << "sp_fail_node = " << sp_fail_node << endl;
+//  cout << "sp_fail_node = " << sp_fail_node << endl;
   for(int i=0;i<sp_fail_node;){
     spn_it = sp_nodes->begin();
     advance(spn_it, rand()%sp_nodes->size());
-    if(failed_nodes.AddFailedNode(spn_it->first) == true){
+    if(failed_nodes->AddFailedNode(spn_it->first) == true){
       i++;
     }
   }
@@ -144,17 +193,66 @@ int main(int argc, char *argv[]){
   map<int, map<int, multimap<int,int>*>*>* savn = dht_avp->UpdateToSuperpeers(sp_node_map);  //for superpeer
 
   spacing = num_node/target_run_index;
-
+  map<double, vector<double>* > static_sub_region_res_coverage;
+  map<double, vector<double>* > dynamic_sub_region_res_coverage;
   for(node_it=node_list->begin();node_it!=node_list->end();node_it++){
-    if(node_index++%spacing != 0){          
+    if(node_index++%spacing != 0 || failed_nodes->CheckIfFailed(node_it->first)==true){          
       continue;
     }
+    run_index++;
 //    cout << node_index << endl;
     
     map<string, GlobalClass*>* channel = new map<string, GlobalClass*>();
     P2PRdQuery* res_disc_query = new P2PRdQuery(dht_avp, DHT, true, max_target_num);
     (*channel)["query"] = res_disc_query;
 
+
+//To check tree-depth
+/*
+    res_disc_query->Mode = OPTIMAL;
+    res_disc_query->Clockwise = true;
+    res_disc_query->DetermineAllQueryRange();
+    res_disc_act = new ResourceDiscoveryAct(channel, symphony_net.GetRoutingTable(), failed_nodes, false);
+    res_disc_act->Execute(node_it->first);
+    delete (ResourceDiscoveryAct*)res_disc_act;
+    total_hops += res_disc_query->CurHops;
+    res_disc_query->Initialize();
+*/
+// Sub-Region query complteness check based on queried region
+/*
+    for(int b=0;b<=1;b++){
+      for(double d=0.6;d<=1.4;d+=0.2){
+        res_disc_query->Initialize();
+        res_disc_query->Mode = SUB_REGION;
+        res_disc_query->DetermineSubRegionQuery(d, node_it->first);
+        res_disc_act = new ResourceDiscoveryAct(channel, symphony_net.GetRoutingTable(), failed_nodes, (bool)b);
+        res_disc_act->Execute(node_it->first);
+        delete (ResourceDiscoveryAct*)res_disc_act;
+        vector<double>* buf;
+        if(b == 0){
+          if(static_sub_region_res_coverage.count(d) == 0){
+            buf = new vector<double>();
+            static_sub_region_res_coverage[d] = buf;
+          }else{
+            buf = static_sub_region_res_coverage[d];
+          }
+          buf->push_back(res_disc_query->GetResultCoverage());
+        }else{
+          if(dynamic_sub_region_res_coverage.count(d) == 0){
+            buf = new vector<double>();
+            dynamic_sub_region_res_coverage[d] = buf;
+          }else{
+            buf = dynamic_sub_region_res_coverage[d];
+          }
+          buf->push_back(res_disc_query->GetResultCoverage());
+        }        
+      }
+      res_disc_query->Initialize();
+    }
+*/    
+
+//MAAN (Dht-based) resource discovery
+///*
     res_disc_query->DetermineDhtQueryRange();
     res_disc_act = new DhtResDiscAct(channel, dht_avp->GetDhtResInfo(), failed_nodes);
 //    cout <<node_it->first << "\t" << res_disc_query->AddrBegin << "\t"<<res_disc_query->AddrEnd << endl ;
@@ -163,66 +261,102 @@ int main(int argc, char *argv[]){
     delete res_disc_act;
     res_disc_query->CheckResultCorrectness(failed_nodes, dht_query_stat);
     res_disc_query->Initialize();
+//*/
 
-    
-    res_disc_query->Mode = FIRST_FIT;
+//Result Comparison between D-MARD modules (querying the entire network)
+/*    
+    res_disc_query->Mode = OPTIMAL;
+    res_disc_query->Clockwise = true;
     res_disc_query->DetermineAllQueryRange();
-    res_disc_act = new ResourceDiscoveryAct(channel, symphony_net.GetRoutingTable(), failed_nodes);
+    res_disc_act = new ResourceDiscoveryAct(channel, symphony_net.GetRoutingTable(), failed_nodes, false);
     res_disc_act->Execute(node_it->first);
     delete (ResourceDiscoveryAct*)res_disc_act;
-    res_disc_query->CheckResultCorrectness(failed_nodes, ff_query_stat);
-    res_disc_query->Initialize();
-
-////// Send a task to a reverse direction and merge the result!!!
-
-    
-
-/*
-    bool complete = false;
-    double query_region = 1.0;
-    int prev_begin, prev_end;
-    while(complete == false){
-      res_disc_query->Initialize();
-      res_disc_query->Mode = SUB_REGION;
-      res_disc_query->DetermineSubRegionQuery(query_region, node_it->first);
-      res_disc_act = new ResourceDiscoveryAct(channel, symphony_net.GetRoutingTable(), failed_nodes);
-      res_disc_act->Execute(node_it->first);
-      delete (ResourceDiscoveryAct*)res_disc_act;
-      if(res_disc_query->Result->size() >= res_disc_query->Number || (res_disc_query->AddrBegin==prev_begin && res_disc_query->AddrEnd==prev_end)){
-        complete = true;
-      }
-      query_region += 0.5;
-      prev_begin = res_disc_query->AddrBegin;
-      prev_end = res_disc_query->AddrEnd;
-    }
-    res_disc_query->CheckResultCorrectness(failed_nodes, sr_query_stat);
+    res_disc_query->CheckResultCorrectness(failed_nodes, tree_all_query_stat);
     res_disc_query->Initialize();
 */
-    
+
+//First fit and subregion:determined based on tree dedundancy
+///*
+    res_disc_query->Mode = FIRST_FIT;
+    res_disc_query->Clockwise = true;
+    res_disc_query->DetermineAllQueryRange();
+    res_disc_act = new ResourceDiscoveryAct(channel, symphony_net.GetRoutingTable(), failed_nodes, false);
+    res_disc_act->Execute(node_it->first);
+    delete (ResourceDiscoveryAct*)res_disc_act;
+    int cur_hops = res_disc_query->CurHops;
+//// In a non-redundant mode, we will run sub-region query propagation
+
+
+    if(redundant_tree == 1){
+      res_disc_query->CheckResultCorrectness(failed_nodes, sr_query_stat);
+      res_disc_query->Clockwise = false;
+      res_disc_query->DetermineAllQueryRange();
+      res_disc_act = new ResourceDiscoveryAct(channel, symphony_net.GetRoutingTable(), failed_nodes, false);
+      res_disc_act->Execute(node_it->first);
+      delete (ResourceDiscoveryAct*)res_disc_act;
+      res_disc_query->CurHops = res_disc_query->CurHops > cur_hops ? res_disc_query->CurHops : cur_hops;
+      res_disc_query->CheckResultCorrectness(failed_nodes, ff_query_stat);
+      res_disc_query->Initialize();
+    }else{
+////result initialize for previous first-fit query
+      res_disc_query->CheckResultCorrectness(failed_nodes, ff_query_stat);
+      res_disc_query->Initialize();
+
+      bool complete = false;
+      double query_region = 1.0;
+      int prev_begin, prev_end;
+      while(complete == false){
+        res_disc_query->Initialize();
+        res_disc_query->Mode = SUB_REGION;
+        res_disc_query->DetermineSubRegionQuery(query_region, node_it->first);
+        res_disc_act = new ResourceDiscoveryAct(channel, symphony_net.GetRoutingTable(), failed_nodes, false);
+        res_disc_act->Execute(node_it->first);
+        delete (ResourceDiscoveryAct*)res_disc_act;
+        if(res_disc_query->Result->size() >= res_disc_query->Number || (res_disc_query->AddrBegin==prev_begin && res_disc_query->AddrEnd==prev_end)){
+          complete = true;
+        }
+        query_region += 0.3;
+        prev_begin = res_disc_query->AddrBegin;
+        prev_end = res_disc_query->AddrEnd;
+      }
+      res_disc_query->CheckResultCorrectness(failed_nodes, sr_query_stat);
+      res_disc_query->Initialize();
+    }
+//*/
+
+//unstructured message propagation
+///*   
     res_disc_act = new SingleResDiscAct(channel, failed_nodes);
     PerformFlooding(unstr_msg_dist, res_disc_act, node_it->first, ttl, false, NULL);
     res_disc_query->CheckResultCorrectness(failed_nodes, unstructured_query_stat);
     res_disc_query->Initialize();
     delete res_disc_act;   
+//*/
 
-
-    
+//Superpeer-based resource discovery
+///*
     int begin_sp_node = (*sp_node_map)[node_it->first];
     res_disc_act = new SuperpeerResDiscAct(channel, savn, failed_nodes);
     PerformFlooding(sp_msg_dist, res_disc_act, begin_sp_node, ttl, true, sp_node_map);
     res_disc_query->CheckResultCorrectness(failed_nodes, superpeer_query_stat);
     res_disc_query->Initialize();
     delete res_disc_act;  
- 
-
+// */
     delete res_disc_query;
     delete channel;
   }
+//  double avg_hops = total_hops/(double)run_index;
+//  cout << num_node << "\t" << avg_hops << endl;
+//  PrintCoverageStat("static", static_sub_region_res_coverage);
+//  cout << endl;
+//  PrintCoverageStat("dynamic", dynamic_sub_region_res_coverage);
   PrintQueryStat(dht_query_stat, "dht");
+//  PrintQueryStat(tree_all_query_stat, "tree-all");
   PrintQueryStat(ff_query_stat, "first-fit");
   PrintQueryStat(sr_query_stat, "sub-region");
   PrintQueryStat(unstructured_query_stat, "unstructured");
   PrintQueryStat(superpeer_query_stat, "superpeer");
+//  CompareIncompleteness(ff_query_stat, sr_query_stat);
   return 1;
 }
 #else
@@ -278,7 +412,7 @@ int main(int argc, char *argv[])
       int res_update_period = 1;
       P2PAction* res_disc_act;
       map<int,int>::iterator node_it;
-      P2PNodeFailure failed_nodes = P2PNodeFailure(p2p->GetNodeLists(), num_failed_nodes);   // for super-peer, it will be non-super-peer nodes
+      P2PNodeFailure* failed_nodes = new P2PNodeFailure(p2p->GetNodeLists(), num_failed_nodes);   // for super-peer, it will be non-super-peer nodes
       P2PMessageDist* msg_dist = new P2PMessageDist((p2p->GetRoutingTable()), failed_nodes);
 
       spacing = num_node/target_run_index;

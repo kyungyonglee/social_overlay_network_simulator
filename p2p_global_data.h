@@ -54,23 +54,31 @@ namespace Starsky {
 
   class P2PNodeFailure{
     public:
+      P2PNodeFailure();
       P2PNodeFailure(map<int,int>* node_list, int num_failed_node);
+      ~P2PNodeFailure();
       bool CheckIfFailed(int test_node_id);
       bool AddFailedNode(int failed_node_id);
     protected:
       int _num_failed_nodes;
-      map<int,int> _failed_nodes;
+      map<int,int>* _failed_nodes;
   };
 
   class ResDiscResult{
     public:
       ResDiscResult();
       int Count;
-      int FalseResult;
+      double FalseResult;
       long AvgResultAge;
       long Hops;
+      long MaxHops;
+      long MinHops;
       long TotalMessages;
+      long MaxMessages;
+      long MinMessages;
+      long TotalQueriedNodes;
       double InCompleteness;
+      double Completeness;
   };
 }
 #endif

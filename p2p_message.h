@@ -47,6 +47,7 @@ namespace Starsky {
       map<int, map<int, vector<int>* >* >* GetValueNodeList();
       map<int, map<int, multimap<int,int>*>*>* UpdateToSuperpeers(map<int,int>* superpeer_map);  //superpeer_id/attribute_id/value/host_id
       void CheckCumuMap();
+      int GenerateNewValue(int attribute);
     protected:      
       map<int,int>* _node_list;
       map<int, map<int,int>* >* _attr_value_pair;   //node_id and it assignment
@@ -82,7 +83,7 @@ namespace Starsky {
   class P2PMessageDist{
     public:
 //      P2PMessageDist(map<int, map<int,int>* >* routingt_table);
-      P2PMessageDist(map<int, map<int,int>* >* routingt_table, P2PNodeFailure& node_failure);
+      P2PMessageDist(map<int, map<int,int>* >* routingt_table, P2PNodeFailure* node_failure);
       int P2PTreeMulticast(int source, int begin_addr, int end_addr, P2PAction* actions, bool clockwise);
       int P2PGreedyRouting(int source, int target, P2PAction* actions);
       int P2PSequentialCrawling(int host_id, int begin_addr, int end_addr, P2PAction* actions);      
@@ -91,7 +92,7 @@ namespace Starsky {
     protected:      
       static map<int, map<int, int>* >* AllocateRegions(map<int,int>* routing_table, int begin_addr, int end_addr, int exclude, bool clockwise);
       map<int, map<int,int>* >* _global_rt;
-      P2PNodeFailure _node_failures;
+      P2PNodeFailure* _node_failures;
   };
 
   class P2PRdQuery : public GlobalClass{
@@ -99,13 +100,15 @@ namespace Starsky {
       P2PRdQuery(AttrValuePair* attribute_values, int mode, bool clockwise, int max_target_num);
       P2PRdQuery();
       ~P2PRdQuery();      
-      bool CheckResultCorrectness(P2PNodeFailure& failed_nodes);
-      bool CheckResultCorrectness(P2PNodeFailure & failed_nodes, map<int, map<int, ResDiscResult*>* >& stat);
+      bool CheckResultCorrectness(P2PNodeFailure* failed_nodes);
+      bool CheckResultCorrectness(P2PNodeFailure* failed_nodes, map<int, map<int, ResDiscResult*>* >& stat);
       void DetermineDhtQueryRange();      
       void DetermineSubRegionQuery(double fraction, int host_id);    
       void DetermineAllQueryRange();
       void Initialize();
       int CheckResultValidity(int dynamic_period, int res_update_period);
+      double GetResultCoverage();      
+      int GetRealSatisfyingNodes(P2PNodeFailure* failed_nodes);
 
       int Attribute;
       int Begin;
@@ -118,6 +121,8 @@ namespace Starsky {
       int CurHops;
       int TotalMsgs;
       int MaxTargetNum;
+      int TotalSatisfyingNode;
+      int NumQueriedNodes;
       bool Clockwise;
       map<int, int>* Result; //key=node id, value = time
       AttrValuePair* AttributeValues; 

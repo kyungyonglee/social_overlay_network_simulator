@@ -162,6 +162,12 @@ map<int, map<int, multimap<int,int>*>*>* AttrValuePair::UpdateToSuperpeers(map<i
   return superpeer_assign;
 }
 
+int AttrValuePair::GenerateNewValue(int attribute){
+  vector<int>* zipf_value = (*_attr_freq_count)[attribute];
+  return (*zipf_value)[rand()%zipf_value->size()];
+}
+
+
 DynamicAttribute::DynamicAttribute(int mean_attr_change_time, int update_period):_mean_attr_dynamic_time(mean_attr_change_time), _attr_update_period(update_period){
   _poisson_dist = std::tr1::poisson_distribution<int>(_mean_attr_dynamic_time);
   ChangeUpdatePeriod(update_period);
@@ -292,14 +298,14 @@ map<int, map<int, vector<int>*>* >* P2PResInfoDhtUpdate::GetDhtResInfo(){
 //  _node_failures = P2PNodeFailure(NULL, 0);
 //}
 
-P2PMessageDist::P2PMessageDist(map<int, map<int,int>* >* routingt_table, P2PNodeFailure& node_failure) :_global_rt(routingt_table), _node_failures(node_failure){
+P2PMessageDist::P2PMessageDist(map<int, map<int,int>* >* routingt_table, P2PNodeFailure* node_failure) :_global_rt(routingt_table), _node_failures(node_failure){
 }
 
 int P2PMessageDist::P2PTreeMulticast(int source, int begin_addr, int end_addr, P2PAction* actions, bool clockwise){
   bool within_range = SonUtil::WithinRange(source, begin_addr, end_addr);
   map<int,int>* host_rt = (*_global_rt)[source];
   int max_depth = 0;
-  if(_node_failures.CheckIfFailed(source) == true){
+  if(_node_failures->CheckIfFailed(source) == true){
     return 0;
   }
   if(within_range){
@@ -369,7 +375,7 @@ int P2PMessageDist::P2PSequentialCrawling(int host_id, int begin_addr, int end_a
   }
   int visited_nodes = P2PGreedyRouting(host_id,start_it->first, NULL);
   while(start_it->first < end_addr && start_it!=_global_rt->end()){
-    if(_node_failures.CheckIfFailed(start_it->first) == true){
+    if(_node_failures->CheckIfFailed(start_it->first) == true){
       return visited_nodes;
     }    
     visited_nodes++;
@@ -386,7 +392,7 @@ int P2PMessageDist::P2PSequentialCrawling(int host_id, int begin_addr, int end_a
 
 int P2PMessageDist::P2PFlooding(int src_id, int host_id, int ttl, map<int,int>* visited_nodes, P2PAction* actions){  //src=message source, host=msg receiver
   bool matching, renew_ttl = false, prev_ttl_is_zero=false;  
-  if(_node_failures.CheckIfFailed(host_id) == true){
+  if(_node_failures->CheckIfFailed(host_id) == true){
     return 0;
   }
   
@@ -476,19 +482,21 @@ P2PRdQuery::P2PRdQuery(AttrValuePair* attribute_values, int mode, bool clockwise
   int t2 = (*attr_freq)[rand()%attr_freq->size()];
   Begin = t1 < t2 ? t1 : t2;
   End = t1 < t2 ? t2: t1;
-  CurHops = 0;
   DistanceFromRoot = 0;
   Number = (rand() % max_target_num);
+//  Number = (rand() % (max_target_num/2));
+//  Number += (max_target_num/2);
   Number = Number == 0 ? 1 : Number;
   Result = new map<int,int>();
+  NumQueriedNodes = 0;
+  Initialize();
   if(mode == OPTIMAL || mode == FIRST_FIT){
     AddrBegin = 0;
     AddrEnd = 0x7fffffff;
   }else if(mode == DHT){
     DetermineDhtQueryRange();
   }
-  TotalMsgs = 0;
-  MaxTargetNum = max_target_num;
+  MaxTargetNum = max_target_num;  
 }
 
 P2PRdQuery::P2PRdQuery(){
@@ -496,13 +504,15 @@ P2PRdQuery::P2PRdQuery(){
   CurHops = 0;
   DistanceFromRoot = 0;
   TotalMsgs = 0;
+  NumQueriedNodes = 0;
+  Initialize();
 }
 
 P2PRdQuery::~P2PRdQuery(){
   delete Result;
 }
 
-bool P2PRdQuery::CheckResultCorrectness(P2PNodeFailure & failed_nodes, map<int, map<int, ResDiscResult*>* >& stat){
+bool P2PRdQuery::CheckResultCorrectness(P2PNodeFailure* failed_nodes, map<int, map<int, ResDiscResult*>* >& stat){
   int fail_node_count = 0, stat_key;
 //  bool stat_fill = stat.size() != 0 ? true : false;
   bool stat_fill = true;
@@ -510,19 +520,8 @@ bool P2PRdQuery::CheckResultCorrectness(P2PNodeFailure & failed_nodes, map<int, 
   if(Result->size() >= Number && stat_fill == false){
 //    cout << "discovered all required nodes : "<<endl;
   }else{
-    map<int, map<int,vector<int>* >* >* value_nodes_map = AttributeValues->GetValueNodeList();
-    map<int, vector<int>* >* vnmap = (*value_nodes_map)[Attribute];
     int total_nodes_num = AttributeValues->GetAttrValuePair()->size();
-    for(int i=Begin;i<=End;i++){
-      if(vnmap->count(i) != 0){
-        vector<int>* node_list = (*vnmap)[i];
-        for(int k=0;k<node_list->size();k++){
-          if(failed_nodes.CheckIfFailed((*node_list)[k]) == false){
-            real_node_count++;
-          }
-        }
-      }
-    }
+    real_node_count = GetRealSatisfyingNodes(failed_nodes);
     if((Result->size() != real_node_count) && (Result->size() < Number)){
 //      double queried_region = AddrEnd > AddrBegin ? (AddrEnd-AddrBegin)/(double)RAND_MAX : ((RAND_MAX-AddrBegin) + AddrEnd)/(double)RAND_MAX;
 //      cout << "Query no complete result size: " << Result->size() << " target number = " << Number<< " Real satisfying: " << real_node_count << " attribute = " <<Attribute << " begin = " << Begin << " end = " << End << " Begion addr = " << AddrBegin << " End addr = " <<AddrEnd << "queried region = " << queried_region <<endl;
@@ -535,7 +534,7 @@ bool P2PRdQuery::CheckResultCorrectness(P2PNodeFailure & failed_nodes, map<int, 
   long total_result_age = 0;
   for(result_it=Result->begin();result_it!=Result->end();result_it++){
     total_result_age += result_it->second;
-    fail_node_count = failed_nodes.CheckIfFailed(result_it->first) == true ? fail_node_count+1 : fail_node_count;
+    fail_node_count = failed_nodes->CheckIfFailed(result_it->first) == true ? fail_node_count+1 : fail_node_count;
     map<int,int>* host_av = (*av_pair)[result_it->first];
     if((*host_av)[Attribute] < Begin || (*host_av)[Attribute] >End){
       cout << "incorrect result returned : " <<result_it->first << " Attribute = " << Attribute << " Value = " <<(*host_av)[Attribute]<< " Begin: " << Begin << " End: " << End<<endl;
@@ -573,17 +572,26 @@ bool P2PRdQuery::CheckResultCorrectness(P2PNodeFailure & failed_nodes, map<int, 
     
     entry->Count = entry->Count + 1;
     entry->Hops = entry->Hops + CurHops;
+    entry->MaxHops = entry->MaxHops > CurHops ? entry->MaxHops : CurHops;
+    entry->MinHops = entry->MinHops < CurHops ? entry->MinHops : CurHops;
     entry->TotalMessages = entry->TotalMessages + TotalMsgs;
+    entry->MaxMessages = entry->MaxMessages > TotalMsgs ? entry->MaxMessages : TotalMsgs;
+    entry->MinMessages = entry->MinMessages < TotalMsgs ? entry->MinMessages : TotalMsgs;
     int temp = min(Number,(int)(Result->size() - fail_node_count));
     double incompleteness =  (real_node_count - (Result->size()-fail_node_count))*(Number - temp)/ (double)(real_node_count*Number);
+    double completeness = max(temp/(double)real_node_count, temp/(double)Number);
     entry->InCompleteness = entry->InCompleteness + incompleteness;
+    entry->Completeness = entry->Completeness + completeness;
     entry->AvgResultAge = entry->AvgResultAge + avg_res_age;
-    entry->FalseResult = entry->FalseResult + fail_node_count;
+    if(Result->size() != 0){
+      entry->FalseResult = entry->FalseResult + (fail_node_count/(double)Result->size());
+    }
+    entry->TotalQueriedNodes = entry->TotalQueriedNodes + NumQueriedNodes;
   }
   return true;
 }
 
-bool P2PRdQuery::CheckResultCorrectness(P2PNodeFailure& failed_nodes){
+bool P2PRdQuery::CheckResultCorrectness(P2PNodeFailure* failed_nodes){
   map<int, map<int, ResDiscResult*>* > result;
   CheckResultCorrectness(failed_nodes, result);
 }
@@ -626,6 +634,8 @@ void P2PRdQuery::Initialize(){
   TotalMsgs = 0;
   AddrBegin = -1;
   AddrEnd = -1;
+  TotalSatisfyingNode = 0;
+  NumQueriedNodes = 0;
 }
 int P2PRdQuery::CheckResultValidity(int dynamic_period, int res_update_period){
   DynamicAttribute da_tester = DynamicAttribute(dynamic_period, res_update_period);
@@ -635,4 +645,33 @@ int P2PRdQuery::CheckResultValidity(int dynamic_period, int res_update_period){
     change_num = da_tester.CheckIfChanged((res_it->second)*latency)==true?change_num+1:change_num;
   }
   return change_num;
+}
+
+int P2PRdQuery::GetRealSatisfyingNodes(P2PNodeFailure* failed_nodes){
+  map<int, map<int,vector<int>* >* >* value_nodes_map = AttributeValues->GetValueNodeList();
+  map<int, vector<int>* >* vnmap = (*value_nodes_map)[Attribute];
+  int real_node_count = 0;
+  for(int i=Begin;i<=End;i++){
+    if(vnmap->count(i) != 0){
+      vector<int>* node_list = (*vnmap)[i];
+      for(int k=0;k<node_list->size();k++){
+        if(failed_nodes->CheckIfFailed((*node_list)[k]) == false){
+          real_node_count++;
+        }
+      }
+    }
+  }
+  return real_node_count;
+}
+
+double P2PRdQuery::GetResultCoverage(){
+  if(TotalSatisfyingNode >= Number){
+    return ((double)TotalSatisfyingNode/(double)Number);
+  }else{
+    P2PNodeFailure* failed_nodes = new P2PNodeFailure();
+    int real_satisfying_nodes = GetRealSatisfyingNodes(failed_nodes);
+    int denom = real_satisfying_nodes < Number ? real_satisfying_nodes : Number;
+    delete failed_nodes;
+    return ((double)TotalSatisfyingNode/(double)denom);
+  }
 }

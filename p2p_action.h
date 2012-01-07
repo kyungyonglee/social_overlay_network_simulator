@@ -37,33 +37,35 @@ namespace Starsky {
   class P2PRdQuery;
   class P2PAction{
     public:
-      P2PAction(map<string, GlobalClass*>* channel, P2PNodeFailure& node_failure);
+      P2PAction(map<string, GlobalClass*>* channel, P2PNodeFailure* node_failure);
       virtual bool Execute();
       virtual bool Execute(int host_id);
       map<string, GlobalClass*>* GetChannel();
     protected:
       map<string, GlobalClass*>* _channel;
-      P2PNodeFailure _node_failure;
+      P2PNodeFailure* _node_failure;
       int _update_period;
   };
 
   class ResourceDiscoveryAct : public P2PAction{
     public:
-      ResourceDiscoveryAct(map<string, GlobalClass*>* channel, map<int, map<int,int>* >* global_rt, P2PNodeFailure& node_failure);
+      ResourceDiscoveryAct(map<string, GlobalClass*>* channel, map<int, map<int,int>* >* global_rt, P2PNodeFailure* node_failure, bool dynamic_attr);
       ~ResourceDiscoveryAct();      
+      bool DynamicAttrMm(P2PRdQuery* query);
       static void CloneQueryClass(P2PRdQuery* host, P2PRdQuery* copied);
       bool Execute(int host_id);
       bool Aggregate();      
       static bool Matchmaking(int host_id, P2PRdQuery* query);
     protected:      
       bool FreeChildActions();
+      bool _is_dynamic_attr;
       map<int, map<int,int>* >* _routing_table;
       multimap<int, ResourceDiscoveryAct*>* _child_actions;
   };
   
   class DhtResDiscAct : public P2PAction{
     public:
-      DhtResDiscAct(map<string, GlobalClass*>* channel, map<int, map<int, vector<int>*>* >* dht_res_info, P2PNodeFailure& node_failure);
+      DhtResDiscAct(map<string, GlobalClass*>* channel, map<int, map<int, vector<int>*>* >* dht_res_info, P2PNodeFailure* node_failure);
       bool Execute(int host_id);
     protected:
       map<int, map<int, vector<int>*>* >* _dht_res_info;
@@ -71,20 +73,20 @@ namespace Starsky {
 
   class SingleResDiscAct: public P2PAction{
     public: 
-      SingleResDiscAct(map<string, GlobalClass*>* channel, P2PNodeFailure& node_failure);
+      SingleResDiscAct(map<string, GlobalClass*>* channel, P2PNodeFailure* node_failure);
       bool Execute(int host_id);
   };
 
   class SuperpeerResDiscAct : public P2PAction{
     public:
-      SuperpeerResDiscAct(map<string, GlobalClass*>* channel, map<int, map<int, multimap<int,int>*>*>* spav_asgn, P2PNodeFailure& node_failure);
+      SuperpeerResDiscAct(map<string, GlobalClass*>* channel, map<int, map<int, multimap<int,int>*>*>* spav_asgn, P2PNodeFailure* node_failure);
       bool Execute(int host_id);
     protected:
       map<int, map<int, multimap<int,int>*>*>* _sp_av_assignment; // superpeerID/attribute/value/hostID      
   };
   class P2PNodeCountAct : public P2PAction{
     public:
-      P2PNodeCountAct(map<string, GlobalClass*>* channel, P2PNodeFailure& node_failure);
+      P2PNodeCountAct(map<string, GlobalClass*>* channel, P2PNodeFailure* node_failure);
       bool Execute();
      bool Execute(int host_id);
   };

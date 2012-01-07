@@ -45,7 +45,12 @@ P2PStat::P2PStat(){
   MaxDepth = 0;
 }
 
-P2PNodeFailure::P2PNodeFailure(map<int,int>* node_list, int num_failed_node):_num_failed_nodes(num_failed_node){
+P2PNodeFailure::P2PNodeFailure(){
+  _num_failed_nodes = 0;
+  _failed_nodes = new map<int,int>();
+}
+P2PNodeFailure::P2PNodeFailure(map<int,int>* node_list, int num_failed_node):_num_failed_nodes(num_failed_node){  
+  _failed_nodes = new map<int,int>();
   if(node_list == NULL){
     return;
   }
@@ -56,23 +61,28 @@ P2PNodeFailure::P2PNodeFailure(map<int,int>* node_list, int num_failed_node):_nu
     nl_it = node_list->begin();
     advance(nl_it, rand()%net_size);
     candidate = nl_it->first;
-    if(_failed_nodes.count(candidate) == 0){
-      _failed_nodes[candidate] = 1;
+    if(_failed_nodes->count(candidate) == 0){
+      (*_failed_nodes)[candidate] = 1;
       added++;
     }
   }
 }
 
+P2PNodeFailure::~P2PNodeFailure(){
+  delete _failed_nodes;
+}
+
+
 bool P2PNodeFailure::AddFailedNode(int failed_node_id){
-  if(_failed_nodes.count(failed_node_id) == 0){
-    _failed_nodes[failed_node_id] = 1;
+  if(_failed_nodes->count(failed_node_id) == 0){
+    (*_failed_nodes)[failed_node_id] = 1;
     return true;
   }
   return false;
 }
 
 bool P2PNodeFailure::CheckIfFailed(int test_node_id){
-  return (_failed_nodes.count(test_node_id) == 0 ? false : true);
+  return (_failed_nodes->count(test_node_id) == 0 ? false : true);
 }
 
 ResDiscResult::ResDiscResult(){
@@ -80,7 +90,13 @@ ResDiscResult::ResDiscResult(){
   Hops = 0;
   TotalMessages = 0;
   InCompleteness = 0.0;
+  Completeness = 0.0;
   AvgResultAge = 0;
-  FalseResult = 0;
+  FalseResult = 0.0;
+  MaxHops = 0;
+  MinHops = 0x7fffffff;
+  MaxMessages = 0;
+  MinMessages = 0x7fffffff;
+  TotalQueriedNodes = 0;
 }
 
